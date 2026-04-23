@@ -75,6 +75,10 @@ let xyY = 0.5;
 const activeVideos = new Map();
 let canvas, ctx;
 let offscreenCanvas, offscreenCtx;
+// Reverse state: cuando X < 0.5 decrementamos video.currentTime manualmente
+let videoReverseActive = false;
+let videoReverseRate = 1;
+let videoReverseLastT = 0;
 
 const keyMap = {
   '1': 0, '2': 1, '3': 2, '4': 3, '5': 4,
@@ -199,6 +203,7 @@ function stopPad(globalIndex) {
 }
 
 function panicStopAll() {
+  videoReverseActive = false;
   for (const [, player] of players) {
     if (player.state === 'started') player.stop();
   }
@@ -245,10 +250,41 @@ function updateXYEffects() {
   for (const [, player] of players) {
     if (player.state === 'started') applyRateToPlayer(player, rate);
   }
-  // <video> nativo no soporta reverse de manera consistente: en reverse lo freezo.
-  for (const [, video] of activeVideos) {
-    video.playbackRate = isReverse ? 0.01 : absRate;
+
+  // Video: en reverse decrementamos currentTime manualmente (loop en videoReverseTick).
+  // En playback normal el video usa su propio playbackRate.
+  if (isReverse) {
+    videoReverseRate = absRate;
+    if (!videoReverseActive) {
+      videoReverseActive = true;
+      videoReverseLastT = performance.now();
+      requestAnimationFrame(videoReverseTick);
+    }
+    for (const [, video] of activeVideos) {
+      video.pause();
+    }
+  } else {
+    videoReverseActive = false;
+    for (const [, video] of activeVideos) {
+      video.playbackRate = absRate;
+      if (video.paused) video.play().catch(() => {});
+    }
   }
+}
+
+function videoReverseTick() {
+  if (!videoReverseActive) return;
+  const now = performance.now();
+  const dt = (now - videoReverseLastT) / 1000;
+  videoReverseLastT = now;
+  for (const [, video] of activeVideos) {
+    if (video.readyState >= 2 && video.duration) {
+      let next = video.currentTime - dt * videoReverseRate;
+      if (next <= 0) next = video.duration; // loop al final cuando llega al 0
+      video.currentTime = next;
+    }
+  }
+  requestAnimationFrame(videoReverseTick);
 }
 
 // ─────────────────────────────────────────
@@ -264,7 +300,21 @@ function triggerVideo(globalIndex) {
   video.muted = true;
   video.playsInline = true;
   const initRate = computeRate(xyX);
-  video.playbackRate = initRate < 0 ? 0.01 : Math.max(0.01, initRate);
+  if (initRate >= 0) {
+    video.playbackRate = Math.max(0.01, initRate);
+  } else {
+    // Arranca en reverse: el videoReverseTick ya decrementa currentTime.
+    // Empezar desde el final para que visualmente se note el reverse.
+    video.addEventListener('loadedmetadata', () => {
+      if (video.duration) video.currentTime = video.duration;
+    }, { once: true });
+    videoReverseRate = Math.abs(initRate);
+    if (!videoReverseActive) {
+      videoReverseActive = true;
+      videoReverseLastT = performance.now();
+      requestAnimationFrame(videoReverseTick);
+    }
+  }
 
   video.onended = () => activeVideos.delete(globalIndex);
   video.onerror = () => activeVideos.delete(globalIndex);
@@ -739,8 +789,8 @@ function buildUI() {
           <div class="help-section-title">// SHORTCUTS</div>
           <table class="help-table">
             <tr><td>1-9 , 0</td><td>disparar pads</td></tr>
-            <tr><td>↑ / ↓</td><td>página siguiente / anterior</td></tr>
-            <tr><td>← / →</td><td>efecto visual</td></tr>
+            <tr><td>← / →</td><td>página anterior / siguiente</td></tr>
+            <tr><td>↑ / ↓</td><td>efecto visual siguiente / anterior</td></tr>
             <tr><td>SPACE</td><td>autoplay on/off</td></tr>
             <tr><td>TAB</td><td>ciclar modo UI (FULL · XY · PADS · STEALTH)</td></tr>
             <tr><td>W</td><td>toggle onda de audio (waveform) sobre el video</td></tr>
@@ -808,7 +858,7 @@ function buildUI() {
       </div>
 
       <footer class="bottom-bar">
-        <span class="hint">1-0=PADS · ↑↓=PAG · ←→=FX · SPC=AUTO · TAB=UI · W=WAVE · .=PANIC · ?=AYUDA</span>
+        <span class="hint">1-0=PADS · ←→=PAG · ↑↓=FX · SPC=AUTO · TAB=UI · W=WAVE · .=PANIC · ?=AYUDA</span>
       </footer>
     </div>
   `;
@@ -935,28 +985,30 @@ function setupEventListeners() {
       return;
     }
 
-    if (key === 'arrowup') {
+    // ← → paginado de clips
+    if (key === 'arrowright') {
       e.preventDefault();
       if (currentPage < totalPages - 1) {
         currentPage++; renderPadGrid(); updatePageIndicator();
       }
       return;
     }
-    if (key === 'arrowdown') {
+    if (key === 'arrowleft') {
       e.preventDefault();
       if (currentPage > 0) {
         currentPage--; renderPadGrid(); updatePageIndicator();
       }
       return;
     }
-    if (key === 'arrowleft') {
-      e.preventDefault();
-      setEffect(currentEffectIndex - 1);
-      return;
-    }
-    if (key === 'arrowright') {
+    // ↑ ↓ cambio de efecto visual
+    if (key === 'arrowup') {
       e.preventDefault();
       setEffect(currentEffectIndex + 1);
+      return;
+    }
+    if (key === 'arrowdown') {
+      e.preventDefault();
+      setEffect(currentEffectIndex - 1);
       return;
     }
 
@@ -1041,6 +1093,10 @@ async function loadConfig() {
     if (typeof parsed?.ui?.xyPadOpacity === 'number') {
       const a = Math.max(0, Math.min(1, parsed.ui.xyPadOpacity));
       document.documentElement.style.setProperty('--xy-pad-opacity', String(a));
+    }
+    if (typeof parsed?.ui?.padOpacity === 'number') {
+      const a = Math.max(0, Math.min(1, parsed.ui.padOpacity));
+      document.documentElement.style.setProperty('--pad-opacity', String(a));
     }
   } catch (err) {
     console.warn('config.yaml no encontrado, usando defaults');

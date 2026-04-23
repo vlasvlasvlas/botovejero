@@ -3,7 +3,7 @@
    Paleta CGA/EGA · sin sombras · sin radius · sin blur
    ───────────────────────────────────────── */
 
-@import url('https://fonts.googleapis.com/css2?family=VT323&family=IBM+Plex+Mono:wght@400;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=VT323&family=Silkscreen:wght@400;700&family=Share+Tech+Mono&family=IBM+Plex+Mono:wght@400;700&display=swap');
 
 :root {
   /* CGA/EGA palette */
@@ -24,8 +24,9 @@
   --c-yellow:         #FFFF55;
   --c-white:          #FFFFFF;
 
-  --font-mono: 'VT323', 'IBM Plex Mono', 'Courier New', 'Monaco', monospace;
-  --font-strict-mono: 'IBM Plex Mono', 'Courier New', 'Monaco', monospace;
+  --font-mono: 'VT323', 'Share Tech Mono', 'Courier New', 'Monaco', monospace;
+  --font-strict-mono: 'Share Tech Mono', 'IBM Plex Mono', 'Courier New', 'Monaco', monospace;
+  --font-pixel: 'Silkscreen', 'VT323', 'Courier New', monospace;
 }
 
 * {
@@ -101,7 +102,8 @@ html, body {
   color: var(--c-yellow);
   font-weight: 700;
   letter-spacing: 0.1em;
-  font-size: 22px;
+  font-size: 18px;
+  font-family: var(--font-pixel);
 }
 .loading-sub {
   text-align: center;
@@ -258,7 +260,7 @@ body.mode-stealth    .xy-pad     { display: none !important; }
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 12px;
-  background: var(--c-black);
+  background: rgba(0, 0, 0, var(--pad-opacity, 0.8));
   color: var(--c-yellow);
   padding: 4px 8px;
   border-top: 1px solid var(--c-bright-cyan);
@@ -266,16 +268,22 @@ body.mode-stealth    .xy-pad     { display: none !important; }
 }
 .brand {
   display: flex;
-  align-items: baseline;
-  gap: 0.5ch;
+  align-items: center;
+  gap: 0.8ch;
   font-family: var(--font-mono);
   font-size: 24px;
   color: var(--c-yellow);
   user-select: none;
   white-space: nowrap;
 }
-.brand-bracket { color: var(--c-bright-cyan); }
-.brand-name    { color: var(--c-yellow); font-weight: 700; letter-spacing: 0.05em; }
+.brand-bracket { color: var(--c-bright-cyan); font-family: var(--font-mono); }
+.brand-name {
+  color: var(--c-yellow);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  font-family: var(--font-pixel);
+  font-size: 16px;
+}
 
 .controls-row {
   display: flex;
@@ -361,7 +369,8 @@ body.mode-stealth    .xy-pad     { display: none !important; }
   align-items: center;
   gap: 2px;
   padding: 8px 6px;
-  background: var(--c-black);
+  /* Opacidad configurable via config.yaml → ui.padOpacity */
+  background: rgba(0, 0, 0, var(--pad-opacity, 0.8));
   color: var(--c-gray);
   border: 1px solid var(--c-dark-gray);
   cursor: pointer;
@@ -385,10 +394,12 @@ body.mode-stealth    .xy-pad     { display: none !important; }
 .pad-br { bottom: 1px; right: 3px; }
 
 .pad-key {
-  font-size: 30px;
+  font-size: 20px;
   font-weight: 700;
   color: inherit;
   line-height: 1;
+  font-family: var(--font-pixel);
+  letter-spacing: 0.05em;
 }
 .pad-index {
   font-size: 16px;
@@ -575,7 +586,7 @@ body.mode-stealth    .xy-pad     { display: none !important; }
    BOTTOM BAR
    ───────────────────────────────────────── */
 .bottom-bar {
-  background: var(--c-black);
+  background: rgba(0, 0, 0, var(--pad-opacity, 0.8));
   color: var(--c-bright-cyan);
   border-top: 1px solid var(--c-cyan);
   padding: 4px 8px;
