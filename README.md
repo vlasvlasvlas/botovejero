@@ -33,9 +33,9 @@ Disparás pads con el teclado, modulás velocidad (incluyendo reverse), highpass
 
 - 🎹 **Motor de audio Tone.js** polifónico con pre-carga eager — latencia cero al primer disparo.
 - 🎛 **XY pad** tipo Kaoss, todo el centro (reposo) es neutro:
-  - **Eje X (rate + reverse)**: centro = 1× normal; izquierda = rewind hasta reverse 2×; derecha = fast forward hasta 3×. Pitch natural de vinilo, sin time-stretch. Reverse real via buffer invertido de Tone.js.
+  - **Eje X (rate + reverse)**: centro = 1× normal; izquierda = rewind hasta reverse 2×; derecha = fast forward hasta 3×. Pitch natural de vinilo, sin time-stretch. Reverse real en audio (buffer invertido de Tone.js) **y** en video (decremento manual de `currentTime` frame a frame).
   - **Eje Y (FX)**: centro = sin efecto; **arriba = highpass resonante** (low-cut, sube freq 20 Hz → 3.5 kHz con Q 0.7 → 12); **abajo = delay + reverb wet** (FeedbackDelay + Freeverb).
-  - Opacidad del XY pad configurable en `config.yaml` (`ui.xyPadOpacity`) para dejar ver el video de fondo.
+  - Opacidad del XY pad y de los pads configurable en `config.yaml` (`ui.xyPadOpacity`, `ui.padOpacity`) para dejar ver el video de fondo.
 - 🎨 **12 efectos visuales** configurables por YAML: CSS filters, pixelado, scanlines, RGB shift, ASCII art, ANSI blocks (paleta CGA/AMIGA/MONO), y 5 modos multi-video (`DIFFERENCE`, `EXCLUSION`, `CHANNEL SPLIT`, `WEAVE`, `VIDEO GRID`).
 - 🪟 **4 modos de UI** cicleables por teclado: `FULL`, `XY_ONLY`, `PADS_ONLY`, `STEALTH` (solo video, para proyección).
 - ▶️ **Autoplay** secuencial que ajusta la duración por `playbackRate`.
@@ -70,8 +70,8 @@ Si no bajaste los `.mp4` todavía, ver [Descarga de media](#descarga-de-media).
 | Tecla             | Acción                                              |
 |-------------------|------------------------------------------------------|
 | `1`–`9`, `0`      | Disparar pads 1–10 de la página actual              |
-| `↑` / `↓`         | Cambiar página                                       |
-| `←` / `→`         | Efecto visual anterior / siguiente                  |
+| `←` / `→`         | Cambiar página                                       |
+| `↑` / `↓`         | Efecto visual siguiente / anterior                  |
 | `SPACE`           | Toggle autoplay secuencial                          |
 | `TAB`             | Ciclar modo UI (`FULL` · `XY` · `PADS` · `STEALTH`) |
 | `W`               | Toggle onda de audio sobre el video                 |
@@ -115,6 +115,7 @@ ui:
   defaultEffect: 0        # índice del efecto inicial
   showWaveform: false     # onda de audio sobre el video (toggle: W)
   xyPadOpacity: 0.35      # 0 = XY totalmente transparente, 1 = negro opaco
+  padOpacity: 0.8         # opacidad del fondo de los botones-pad (0..1)
 
 info:
   title: "BOTOVEJERO"
@@ -242,7 +243,6 @@ botovejero/
 │       └── 001.mp4, 002.mp4, …     # Videos descargados
 ├── scripts/
 │   └── download_clips.sh           # Descarga via yt-dlp
-├── docs/                           # (gitignored) auditoría, concept, tasks
 ├── package.json
 ├── vite.config.js
 ├── .gitignore
@@ -269,7 +269,7 @@ botovejero/
 - Cada `Tone.Player` pre-carga su buffer al arranque.
 - Release envelope de 30 ms en `fadeOut` evita clicks al `stop()`.
 - Eje Y centro = neutro absoluto. Subir abre un highpass resonante (cutoff 20 Hz → 3.5 kHz, Q 0.7 → 12) que produce un pico audible, tipo radio AM / low-cut agresivo. Bajar moja un `FeedbackDelay` (0.28s, feedback 0.45) y un `Freeverb` (roomSize 0.75) progresivamente.
-- Eje X modifica `playbackRate` del player + `<video>` en sincronía. En reverse el audio se invierte (buffer de Tone.js); el `<video>` nativo se congela porque no soporta reverse consistente entre browsers.
+- Eje X modifica `playbackRate` del player + `<video>` en sincronía. En reverse el audio se invierte (`player.reverse = true` sobre el buffer de Tone.js) y el `<video>` también va en reverse **real**: un loop sobre `requestAnimationFrame` decrementa `video.currentTime` cada frame y loopea al final cuando llega a 0.
 
 ### Video
 
