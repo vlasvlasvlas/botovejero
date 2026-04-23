@@ -61,6 +61,7 @@ let currentEffectIndex = 0;
 let showWaveform = false;
 let masterVolumePct = 85;  // 0..100 (configurable via config.yaml ui.masterVolume)
 let volumeStep = 5;        // delta por click/tecla (configurable via ui.volumeStep)
+let maxClips = 0;          // 0 = sin límite. N > 0 = carga solo los primeros N clips existentes (config.yaml ui.maxClips)
 
 // Audio
 const players    = new Map();
@@ -74,6 +75,10 @@ let xyX = 0.5;
 let xyY = 0.5;
 let xyReturnMs = 400;      // portamento al soltar (configurable via config.yaml ui.xyReturnMs)
 let xyReturnAnim = null;   // id del requestAnimationFrame en curso, o null
+let xyHoldEnabled = true;  // al soltar: true = clavado donde estaba, false = vuelve al centro (config.yaml ui.xyHold)
+
+// Loop
+let videoLoopEnabled = true; // pads triggereados loopean audio+video sin fin (config.yaml ui.videoLoop)
 
 // Video
 const activeVideos = new Map();
@@ -215,6 +220,7 @@ function triggerPad(globalIndex) {
   if (player.state === 'started') player.stop();
 
   applyRateToPlayer(player, computeRate(xyX));
+  try { player.loop = videoLoopEnabled; } catch { /* no-op */ }
   player.start();
 
   activePads.add(globalIndex);
@@ -363,6 +369,7 @@ function triggerVideo(globalIndex) {
   video.crossOrigin = 'anonymous';
   video.muted = true;
   video.playsInline = true;
+  video.loop = videoLoopEnabled;
   const initRate = computeRate(xyX);
   if (initRate >= 0) {
     video.playbackRate = Math.max(0.01, initRate);
@@ -755,6 +762,44 @@ function autoPlayNext() {
 }
 
 // ─────────────────────────────────────────
+// TOGGLES (XY HOLD / VIDEO LOOP)
+// ─────────────────────────────────────────
+function syncToggleBtn(id, isOn, label) {
+  const btn = document.getElementById(id);
+  if (!btn) return;
+  btn.classList.toggle('on', isOn);
+  btn.textContent = `${isOn ? '[X]' : '[ ]'} ${label}`;
+}
+
+function toggleXYHold() {
+  xyHoldEnabled = !xyHoldEnabled;
+  syncToggleBtn('xyhold-btn', xyHoldEnabled, 'HOLD');
+  if (xyHoldEnabled) {
+    // Activar HOLD durante un retorno en curso: cancelar y congelar ahí.
+    cancelXYReturn();
+  } else if (!xyActive) {
+    // Desactivar HOLD sin el dedo encima: volver al centro ya,
+    // no esperar a que el usuario haga un click para soltarlo.
+    animateXYReturn();
+  }
+  showToast(`XY HOLD ${xyHoldEnabled ? 'ON' : 'OFF'}`);
+}
+
+function toggleVideoLoop() {
+  videoLoopEnabled = !videoLoopEnabled;
+  syncToggleBtn('loop-btn', videoLoopEnabled, 'LOOP');
+  // Aplicar a lo que YA está sonando: si apago loop, terminan y mueren;
+  // si lo prendo, lo que esté corriendo pasa a loopear también.
+  for (const [, player] of players) {
+    try { player.loop = videoLoopEnabled; } catch { /* no-op */ }
+  }
+  for (const [, video] of activeVideos) {
+    video.loop = videoLoopEnabled;
+  }
+  showToast(`VIDEO LOOP ${videoLoopEnabled ? 'ON' : 'OFF'}`);
+}
+
+// ─────────────────────────────────────────
 // UI MODE (Tab cycle)
 // ─────────────────────────────────────────
 function applyUIMode(mode) {
@@ -876,6 +921,15 @@ function buildUI() {
           </table>
         </div>
         <div class="help-section">
+          <div class="help-section-title">// CONFIG</div>
+          <table class="help-table">
+            <tr><td>app</td><td><span class="help-path">public/config.yaml</span> — modo inicial, FX default, opacidades, xyReturnMs, xyHold, videoLoop, maxClips, masterVolume, volumeStep, paletas, lista de efectos, textos de UI</td></tr>
+            <tr><td>clips</td><td><span class="help-path">public/media/playlist.yaml</span> — catálogo de clips (index, title, file). La app filtra faltantes al arrancar</td></tr>
+            <tr><td>media</td><td><span class="help-path">public/media/*.mp4</span> — videos referenciados por el <span class="help-path">file:</span> de cada entrada de la playlist</td></tr>
+            <tr><td>aplicar</td><td>editá el YAML y recargá la página — no hace falta rebuild</td></tr>
+          </table>
+        </div>
+        <div class="help-section">
           <div class="help-section-title">// LINKS</div>
           <a id="help-github" class="help-link" href="#" target="_blank" rel="noreferrer noopener">github</a>
         </div>
@@ -902,6 +956,8 @@ function buildUI() {
             <button id="vol-up" class="ctrl-btn vol-step" title="]">[+]</button>
           </div>
           <button id="autoplay-btn" class="ctrl-btn">[ ] AUTOPLAY</button>
+          <button id="xyhold-btn"   class="ctrl-btn" title="XY pad: al soltar, queda fijo donde lo dejaste">[X] HOLD</button>
+          <button id="loop-btn"     class="ctrl-btn" title="Pads triggereados loopean audio+video hasta panic/retrigger">[X] LOOP</button>
           <button id="shader-btn"   class="ctrl-btn">FX: DIRECTO</button>
           <span   id="page-indicator" class="page-indicator">PAG 01/01</span>
           <button id="prev-page" class="nav-btn">◄</button>
@@ -1119,6 +1175,8 @@ function setupEventListeners() {
   if (volUp)   volUp.addEventListener('click',   () => setMasterVolume(masterVolumePct + volumeStep));
 
   document.getElementById('autoplay-btn').addEventListener('click', toggleAutoPlay);
+  document.getElementById('xyhold-btn').addEventListener('click', toggleXYHold);
+  document.getElementById('loop-btn').addEventListener('click', toggleVideoLoop);
   document.getElementById('shader-btn').addEventListener('click', () => setEffect(currentEffectIndex + 1));
 
   document.getElementById('ui-mode-btn').addEventListener('click', () => {
@@ -1157,7 +1215,7 @@ function setupEventListeners() {
   xyPad.addEventListener('pointerup', () => {
     xyActive = false;
     xyPad.classList.remove('active');
-    animateXYReturn();
+    if (!xyHoldEnabled) animateXYReturn();
   });
 }
 
@@ -1191,11 +1249,20 @@ async function loadConfig() {
     if (typeof parsed?.ui?.xyReturnMs === 'number') {
       xyReturnMs = Math.max(0, parsed.ui.xyReturnMs);
     }
+    if (typeof parsed?.ui?.xyHold === 'boolean') {
+      xyHoldEnabled = parsed.ui.xyHold;
+    }
+    if (typeof parsed?.ui?.videoLoop === 'boolean') {
+      videoLoopEnabled = parsed.ui.videoLoop;
+    }
     if (typeof parsed?.ui?.masterVolume === 'number') {
       masterVolumePct = Math.max(0, Math.min(100, Math.round(parsed.ui.masterVolume)));
     }
     if (typeof parsed?.ui?.volumeStep === 'number') {
       volumeStep = Math.max(1, Math.min(50, Math.round(parsed.ui.volumeStep)));
+    }
+    if (typeof parsed?.ui?.maxClips === 'number') {
+      maxClips = Math.max(0, Math.floor(parsed.ui.maxClips));
     }
   } catch (err) {
     console.warn('config.yaml no encontrado, usando defaults');
@@ -1319,6 +1386,14 @@ async function init() {
   await loadPlaylist();
   await filterMissingClips();
 
+  // Tope configurable: corta la lista a los primeros N existentes
+  // (0 = sin límite). Afecta preload, cache, pads, paginación y autoplay.
+  if (maxClips > 0 && clips.length > maxClips) {
+    const dropped = clips.length - maxClips;
+    clips = clips.slice(0, maxClips);
+    console.info(`Limitado a ${maxClips} clips por config.yaml ui.maxClips (${dropped} ignorados)`);
+  }
+
   applyInfo();
 
   totalPages = Math.ceil(clips.length / PADS_PER_PAGE);
@@ -1331,6 +1406,8 @@ async function init() {
   if (umBtn) umBtn.textContent = `UI: ${uiMode.replace('_', ' ')}`;
 
   setupEventListeners();
+  syncToggleBtn('xyhold-btn', xyHoldEnabled, 'HOLD');
+  syncToggleBtn('loop-btn', videoLoopEnabled, 'LOOP');
   setMasterVolume(masterVolumePct);
   requestAnimationFrame(drawVideoFrame);
 

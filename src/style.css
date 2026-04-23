@@ -193,6 +193,12 @@ html, body {
   font-size: 15px;
 }
 .help-link:hover { color: var(--c-yellow); }
+.help-path {
+  color: var(--c-bright-green);
+  font-family: var(--font-strict-mono);
+  font-size: 14px;
+  letter-spacing: 0;
+}
 .help-footer {
   margin-top: 14px;
   text-align: center;

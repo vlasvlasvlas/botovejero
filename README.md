@@ -38,10 +38,13 @@ Disparás pads con el teclado, modulás velocidad (incluyendo reverse), highpass
 - 🎨 **12 efectos visuales** configurables por YAML: CSS filters, pixelado, scanlines, RGB shift, ASCII art, ANSI blocks (paleta CGA/AMIGA/MONO), y 5 modos multi-video (`DIFFERENCE`, `EXCLUSION`, `CHANNEL SPLIT`, `WEAVE`, `VIDEO GRID`).
 - 🪟 **4 modos de UI** cicleables por teclado: `FULL`, `XY_ONLY`, `PADS_ONLY`, `STEALTH` (solo video, para proyección).
 - ▶️ **Autoplay** secuencial que ajusta la duración por `playbackRate`.
+- 📌 **HOLD** (toggle en la top bar): si está ON, al soltar el mouse el XY pad queda fijo donde lo dejaste en vez de volver al centro. Si está OFF vuelve al centro con el portamento de `ui.xyReturnMs`. Default configurable (`ui.xyHold`).
+- 🔁 **LOOP** (toggle en la top bar): si está ON, los pads triggereados loopean audio+video hasta panic o retrigger. Si está OFF corren una sola vez. Se aplica en caliente a lo que ya esté sonando. Default configurable (`ui.videoLoop`).
 - 🔊 **Master volume** inline en la top bar con `[-]` / `[+]` y barra ANSI; también shortcut `[` / `]`.
 - 🛑 **Panic button** (`.`) corta todo instantáneo.
-- ❓ **Modal de ayuda** (`?`) con shortcuts y links.
+- ❓ **Modal de ayuda** (`?`) con shortcuts, XY pad, referencia a los YAMLs de configuración (`config.yaml` y `playlist.yaml`) y links.
 - 📡 **Consolidación automática** de clips faltantes: si un video no existe, no deja hueco — corre los siguientes.
+- 🎚 **Tope de clips** configurable (`ui.maxClips`): limitá cuántos pads se exponen y se preloadean, incluso si `playlist.yaml` tiene 300 declarados. `0` = sin límite.
 - 🖥 Estética **ANSI BBS** (paleta CGA/EGA, fuente monoespaciada, box-drawing).
 
 ---
@@ -86,8 +89,8 @@ Si no bajaste los `.mp4` todavía, ver [Descarga de media](#descarga-de-media).
 | Zona    | Acción                                                                                  |
 |---------|------------------------------------------------------------------------------------------|
 | Pad     | Click o touch dispara el clip                                                           |
-| XY pad  | Drag para modular. X: reverse ←→ normal ←→ fast. Y: hi-cut resonante (arriba) ←→ neutro (centro) ←→ delay+reverb (abajo). Al soltar vuelve al centro (completamente neutro). |
-| Top bar | Botones equivalentes a los shortcuts (autoplay, FX, paginación, UI mode, help)          |
+| XY pad  | Drag para modular. X: reverse ←→ normal ←→ fast. Y: hi-cut resonante (arriba) ←→ neutro (centro) ←→ delay+reverb (abajo). Al soltar vuelve al centro (o queda clavado si `HOLD` está ON). |
+| Top bar | Botones: autoplay, `HOLD` (XY fijo), `LOOP` (loop de clips), FX, paginación, UI mode, help |
 
 ---
 
@@ -114,10 +117,13 @@ Todo lo estético y la lista de efectos viven en `public/config.yaml`. Editás, 
 ui:
   defaultMode: FULL       # FULL | XY_ONLY | PADS_ONLY | STEALTH
   defaultEffect: 0        # índice del efecto inicial
+  maxClips: 50            # tope de clips a cargar (0 = sin límite). Corta la lista tras filtrar faltantes
   showWaveform: false     # onda de audio sobre el video (toggle: W)
   xyPadOpacity: 0.35      # 0 = XY totalmente transparente, 1 = negro opaco
   padOpacity: 0.8         # opacidad del fondo de los botones-pad (0..1)
   xyReturnMs: 400         # ms de portamento hacia el centro al soltar el XY (0 = snap instantáneo)
+  xyHold: true            # toggle HOLD default. true = el XY queda fijo donde soltaste. false = vuelve al centro (usa xyReturnMs)
+  videoLoop: true         # toggle LOOP default. true = pads loopean audio+video sin fin (panic / retrigger corta). false = corren una sola vez
   masterVolume: 85        # volumen maestro inicial (0..100)
   volumeStep: 5           # cuánto sube/baja por click de [+]/[-] o tecla [/]
 
