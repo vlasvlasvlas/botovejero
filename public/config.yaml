@@ -4,10 +4,13 @@
 ui:
   defaultMode: FULL       # FULL | XY_ONLY | PADS_ONLY | STEALTH
   defaultEffect: 0        # índice del efecto inicial en la lista de abajo
+  maxClips: 50            # tope de clips a cargar (0 = sin límite). Corta la lista después de filtrar los faltantes; menos preload, menos RAM, menos páginas
   showWaveform: false     # onda de audio dibujada sobre el video (toggle: W)
   xyPadOpacity: 0.35      # 0 = totalmente transparente (pasa el video), 1 = negro opaco
   padOpacity: 0.8         # opacidad del fondo de los botones-pad (0..1)
   xyReturnMs: 400         # al soltar el XY, ms de portamento hacia el centro (0 = snap instantáneo)
+  xyHold: true            # true = al soltar, el XY queda fijo donde dejaste el mouse. false = vuelve al centro (usa xyReturnMs)
+  videoLoop: true         # true = los pads triggereados loopean audio+video sin fin (hasta panic/retrigger). false = corren una sola vez
   masterVolume: 85        # volumen maestro inicial (0..100)
   volumeStep: 5           # cuánto sube/baja por click de [+]/[-] o tecla [/]
 
