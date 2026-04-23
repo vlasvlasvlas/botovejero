@@ -20,7 +20,6 @@ Disparás pads con el teclado, modulás velocidad (incluyendo reverse), highpass
 - [Efectos disponibles](#efectos-disponibles)
 - [Playlist (`playlist.yaml`)](#playlist-playlistyaml)
 - [Descarga de media](#descarga-de-media)
-- [Deploy a GitHub Pages](#deploy-a-github-pages)
 - [Estructura del proyecto](#estructura-del-proyecto)
 - [Arquitectura](#arquitectura)
 - [Stack](#stack)
@@ -39,6 +38,7 @@ Disparás pads con el teclado, modulás velocidad (incluyendo reverse), highpass
 - 🎨 **12 efectos visuales** configurables por YAML: CSS filters, pixelado, scanlines, RGB shift, ASCII art, ANSI blocks (paleta CGA/AMIGA/MONO), y 5 modos multi-video (`DIFFERENCE`, `EXCLUSION`, `CHANNEL SPLIT`, `WEAVE`, `VIDEO GRID`).
 - 🪟 **4 modos de UI** cicleables por teclado: `FULL`, `XY_ONLY`, `PADS_ONLY`, `STEALTH` (solo video, para proyección).
 - ▶️ **Autoplay** secuencial que ajusta la duración por `playbackRate`.
+- 🔊 **Master volume** inline en la top bar con `[-]` / `[+]` y barra ANSI; también shortcut `[` / `]`.
 - 🛑 **Panic button** (`.`) corta todo instantáneo.
 - ❓ **Modal de ayuda** (`?`) con shortcuts y links.
 - 📡 **Consolidación automática** de clips faltantes: si un video no existe, no deja hueco — corre los siguientes.
@@ -75,6 +75,7 @@ Si no bajaste los `.mp4` todavía, ver [Descarga de media](#descarga-de-media).
 | `SPACE`           | Toggle autoplay secuencial                          |
 | `TAB`             | Ciclar modo UI (`FULL` · `XY` · `PADS` · `STEALTH`) |
 | `W`               | Toggle onda de audio sobre el video                 |
+| `[` / `]`         | Bajar / subir master volume                         |
 | `.`               | **PANIC** — detiene todo y resetea XY               |
 | `?`               | Abrir modal de ayuda                                |
 | `ESC`             | Cerrar modal de ayuda                               |
@@ -116,6 +117,9 @@ ui:
   showWaveform: false     # onda de audio sobre el video (toggle: W)
   xyPadOpacity: 0.35      # 0 = XY totalmente transparente, 1 = negro opaco
   padOpacity: 0.8         # opacidad del fondo de los botones-pad (0..1)
+  xyReturnMs: 400         # ms de portamento hacia el centro al soltar el XY (0 = snap instantáneo)
+  masterVolume: 85        # volumen maestro inicial (0..100)
+  volumeStep: 5           # cuánto sube/baja por click de [+]/[-] o tecla [/]
 
 info:
   title: "BOTOVEJERO"
@@ -189,39 +193,6 @@ bash scripts/download_clips.sh
 Esto baja los primeros 100 videos de la playlist fuente a `public/media/` en 360p y genera `playlist.yaml`.
 
 > ⚠️ Algunos videos de la playlist pueden estar privados o borrados. Esos quedan fuera y la app los salta sin mostrar hueco.
-
----
-
-## Deploy a GitHub Pages
-
-El workflow `.github/workflows/deploy.yml` ya está incluido y usa el flujo oficial de Pages.
-
-### Primera vez
-
-1. Push del repo a GitHub.
-2. **Settings → Pages → Build and deployment → Source: "GitHub Actions"**.
-3. Si querés disparar el primer deploy manualmente: **Actions → Deploy to GitHub Pages → Run workflow**.
-4. URL final: **<https://vlasvlasvlas.github.io/botovejero/>**.
-
-### Cómo funciona el workflow
-
-- Se dispara en cada push a `main` o manualmente (`workflow_dispatch`).
-- Usa Node 20 + cache de npm.
-- Corre `npm ci && npm run build`.
-- Sube `dist/` como artifact de Pages y lo publica con `actions/deploy-pages@v4`.
-- `concurrency: pages` evita deploys solapados.
-
-### Sobre el `base` de Vite
-
-`vite.config.js` usa `base: './'` — rutas relativas que funcionan tanto en `vlasvlasvlas.github.io/` como en subpaths tipo `vlasvlasvlas.github.io/botovejero/`. Si cambiás el nombre del repo o lo servís desde otra ruta, no tenés que tocar nada.
-
-### Peso del repo
-
-GitHub Pages tiene un límite **soft** de 1 GB por repo y 100 GB/mes de ancho de banda. Los 86 clips en 360p pesan ~500 MB. Si excedés:
-
-- Subí los `.mp4` a otro host (S3, Cloudflare R2, Bunny CDN) y poné URL absoluta en cada `clip.file` del `playlist.yaml`.
-- Bajá aún más la resolución a 240p (editá `-f "best[height<=240]"` en `scripts/download_clips.sh`).
-- Sacá clips que no uses de `playlist.yaml`.
 
 ---
 
@@ -312,9 +283,3 @@ Además del texto legal, pido amistosamente (sin ser vinculante):
 ## Créditos
 
 - **Fuente audiovisual**: [Playlist YouTube — 322 videos de ropavejeros/ropavejeros](https://www.youtube.com/playlist?list=PLqY0WHGqeB2tdEn_quF2paebPOI70NQhj).
-- **Autor**: [@vlasvlasvlas](https://github.com/vlasvlasvlas).
-- **Asistencia técnica**: Claude (Anthropic).
-
----
-
-*Hecho con amor por los que venden cosas gritando por la calle.* 🗣️📢

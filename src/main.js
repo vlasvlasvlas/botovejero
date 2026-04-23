@@ -59,6 +59,8 @@ let allLoaded = false;
 let uiMode = 'FULL';
 let currentEffectIndex = 0;
 let showWaveform = false;
+let masterVolumePct = 85;  // 0..100 (configurable via config.yaml ui.masterVolume)
+let volumeStep = 5;        // delta por click/tecla (configurable via ui.volumeStep)
 
 // Audio
 const players    = new Map();
@@ -70,6 +72,8 @@ let masterFilter, masterDelay, masterReverb, masterGain, masterAnalyser;
 let xyActive = false;
 let xyX = 0.5;
 let xyY = 0.5;
+let xyReturnMs = 400;      // portamento al soltar (configurable via config.yaml ui.xyReturnMs)
+let xyReturnAnim = null;   // id del requestAnimationFrame en curso, o null
 
 // Video
 const activeVideos = new Map();
@@ -114,6 +118,28 @@ function initAudioEngine() {
   masterGain     = new Tone.Gain(1);
   masterAnalyser = new Tone.Analyser('waveform', 256);
   masterFilter.chain(masterDelay, masterReverb, masterGain, masterAnalyser, Tone.getDestination());
+}
+
+// ─────────────────────────────────────────
+// MASTER VOLUME
+// pct ∈ [0..100] → gain lineal [0..1]. Actualiza label + barra ANSI.
+// ─────────────────────────────────────────
+function setMasterVolume(pct) {
+  masterVolumePct = Math.max(0, Math.min(100, Math.round(pct)));
+  if (masterGain) {
+    try { masterGain.gain.rampTo(masterVolumePct / 100, 0.05); }
+    catch { masterGain.gain.value = masterVolumePct / 100; }
+  }
+  const bar = document.getElementById('vol-bar');
+  if (bar) bar.textContent = renderVolBar(masterVolumePct);
+  const num = document.getElementById('vol-num');
+  if (num) num.textContent = String(masterVolumePct).padStart(3, '0');
+}
+
+function renderVolBar(pct) {
+  const len = 14;
+  const filled = Math.round((pct / 100) * len);
+  return '█'.repeat(filled) + '░'.repeat(len - filled);
 }
 
 function setPadState(globalIndex, state) {
@@ -219,10 +245,48 @@ function panicStopAll() {
     if (btn) { btn.classList.remove('on'); btn.textContent = '[ ] AUTOPLAY'; }
     clearTimeout(autoPlayTimer);
   }
+  cancelXYReturn();
   xyX = 0.5; xyY = 0.5;
   const xyCursor = document.getElementById('xy-cursor');
   if (xyCursor) { xyCursor.style.left = '50%'; xyCursor.style.top = '50%'; }
   updateXYEffects();
+}
+
+function cancelXYReturn() {
+  if (xyReturnAnim !== null) {
+    cancelAnimationFrame(xyReturnAnim);
+    xyReturnAnim = null;
+  }
+}
+
+// Al soltar el XY, desliza xyX/xyY hacia el centro (0.5, 0.5) durante
+// xyReturnMs con ease-out, llamando updateXYEffects() cada frame para que
+// el portamento se escuche (rate/filtro/wet barren suavemente).
+function animateXYReturn() {
+  cancelXYReturn();
+  const xyCursor = document.getElementById('xy-cursor');
+  if (xyReturnMs <= 0) {
+    xyX = 0.5; xyY = 0.5;
+    if (xyCursor) { xyCursor.style.left = '50%'; xyCursor.style.top = '50%'; }
+    updateXYEffects();
+    return;
+  }
+  const startX = xyX, startY = xyY;
+  const startT = performance.now();
+  const step = (now) => {
+    const t = Math.min(1, (now - startT) / xyReturnMs);
+    const e = 1 - (1 - t) * (1 - t); // easeOutQuad
+    xyX = startX + (0.5 - startX) * e;
+    xyY = startY + (0.5 - startY) * e;
+    if (xyCursor) {
+      xyCursor.style.left = (xyX * 100) + '%';
+      xyCursor.style.top  = (xyY * 100) + '%';
+    }
+    updateXYEffects();
+    if (t < 1) xyReturnAnim = requestAnimationFrame(step);
+    else xyReturnAnim = null;
+  };
+  xyReturnAnim = requestAnimationFrame(step);
 }
 
 function updateXYEffects() {
@@ -794,6 +858,7 @@ function buildUI() {
             <tr><td>SPACE</td><td>autoplay on/off</td></tr>
             <tr><td>TAB</td><td>ciclar modo UI (FULL · XY · PADS · STEALTH)</td></tr>
             <tr><td>W</td><td>toggle onda de audio (waveform) sobre el video</td></tr>
+            <tr><td>[ / ]</td><td>bajar / subir master volume</td></tr>
             <tr><td>.</td><td>PANIC — stop all</td></tr>
             <tr><td>?</td><td>mostrar esta ayuda</td></tr>
             <tr><td>ESC</td><td>cerrar ayuda</td></tr>
@@ -828,6 +893,14 @@ function buildUI() {
           <span class="brand-bracket">═══╗</span>
         </div>
         <div class="controls-row">
+          <div class="volume-control" title="[ / ] bajan / suben el master volume">
+            <button id="vol-down" class="ctrl-btn vol-step" title="[">[-]</button>
+            <span class="vol-readout">
+              <span id="vol-bar" class="vol-bar">░░░░░░░░░░░░░░</span>
+              <span id="vol-num" class="vol-num">085</span>
+            </span>
+            <button id="vol-up" class="ctrl-btn vol-step" title="]">[+]</button>
+          </div>
           <button id="autoplay-btn" class="ctrl-btn">[ ] AUTOPLAY</button>
           <button id="shader-btn"   class="ctrl-btn">FX: DIRECTO</button>
           <span   id="page-indicator" class="page-indicator">PAG 01/01</span>
@@ -858,7 +931,7 @@ function buildUI() {
       </div>
 
       <footer class="bottom-bar">
-        <span class="hint">1-0=PADS · ←→=PAG · ↑↓=FX · SPC=AUTO · TAB=UI · W=WAVE · .=PANIC · ?=AYUDA</span>
+        <span class="hint">1-0=PADS · ←→=PAG · ↑↓=FX · [/]=VOL · SPC=AUTO · TAB=UI · W=WAVE · .=PANIC · ?=AYUDA</span>
       </footer>
     </div>
   `;
@@ -985,6 +1058,20 @@ function setupEventListeners() {
       return;
     }
 
+    // [ y ] controlan el master volume (bajar / subir)
+    if (e.key === '[') {
+      e.preventDefault();
+      setMasterVolume(masterVolumePct - volumeStep);
+      showToast(`VOL ${String(masterVolumePct).padStart(3, '0')}`);
+      return;
+    }
+    if (e.key === ']') {
+      e.preventDefault();
+      setMasterVolume(masterVolumePct + volumeStep);
+      showToast(`VOL ${String(masterVolumePct).padStart(3, '0')}`);
+      return;
+    }
+
     // ← → paginado de clips
     if (key === 'arrowright') {
       e.preventDefault();
@@ -1026,6 +1113,11 @@ function setupEventListeners() {
     if (currentPage < totalPages - 1) { currentPage++; renderPadGrid(); updatePageIndicator(); }
   });
 
+  const volDown = document.getElementById('vol-down');
+  const volUp   = document.getElementById('vol-up');
+  if (volDown) volDown.addEventListener('click', () => setMasterVolume(masterVolumePct - volumeStep));
+  if (volUp)   volUp.addEventListener('click',   () => setMasterVolume(masterVolumePct + volumeStep));
+
   document.getElementById('autoplay-btn').addEventListener('click', toggleAutoPlay);
   document.getElementById('shader-btn').addEventListener('click', () => setEffect(currentEffectIndex + 1));
 
@@ -1055,6 +1147,7 @@ function setupEventListeners() {
   }
 
   xyPad.addEventListener('pointerdown', (e) => {
+    cancelXYReturn();
     xyActive = true;
     xyPad.setPointerCapture(e.pointerId);
     xyPad.classList.add('active');
@@ -1064,10 +1157,7 @@ function setupEventListeners() {
   xyPad.addEventListener('pointerup', () => {
     xyActive = false;
     xyPad.classList.remove('active');
-    xyX = 0.5; xyY = 0.5;
-    xyCursor.style.left = '50%';
-    xyCursor.style.top  = '50%';
-    updateXYEffects();
+    animateXYReturn();
   });
 }
 
@@ -1097,6 +1187,15 @@ async function loadConfig() {
     if (typeof parsed?.ui?.padOpacity === 'number') {
       const a = Math.max(0, Math.min(1, parsed.ui.padOpacity));
       document.documentElement.style.setProperty('--pad-opacity', String(a));
+    }
+    if (typeof parsed?.ui?.xyReturnMs === 'number') {
+      xyReturnMs = Math.max(0, parsed.ui.xyReturnMs);
+    }
+    if (typeof parsed?.ui?.masterVolume === 'number') {
+      masterVolumePct = Math.max(0, Math.min(100, Math.round(parsed.ui.masterVolume)));
+    }
+    if (typeof parsed?.ui?.volumeStep === 'number') {
+      volumeStep = Math.max(1, Math.min(50, Math.round(parsed.ui.volumeStep)));
     }
   } catch (err) {
     console.warn('config.yaml no encontrado, usando defaults');
@@ -1232,6 +1331,7 @@ async function init() {
   if (umBtn) umBtn.textContent = `UI: ${uiMode.replace('_', ' ')}`;
 
   setupEventListeners();
+  setMasterVolume(masterVolumePct);
   requestAnimationFrame(drawVideoFrame);
 
   renderLoadingOverlay(0, clips.length);

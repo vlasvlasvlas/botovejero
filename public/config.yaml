@@ -7,6 +7,9 @@ ui:
   showWaveform: false     # onda de audio dibujada sobre el video (toggle: W)
   xyPadOpacity: 0.35      # 0 = totalmente transparente (pasa el video), 1 = negro opaco
   padOpacity: 0.8         # opacidad del fondo de los botones-pad (0..1)
+  xyReturnMs: 400         # al soltar el XY, ms de portamento hacia el centro (0 = snap instantáneo)
+  masterVolume: 85        # volumen maestro inicial (0..100)
+  volumeStep: 5           # cuánto sube/baja por click de [+]/[-] o tecla [/]
 
 info:
   title: "BOTOVEJERO"
