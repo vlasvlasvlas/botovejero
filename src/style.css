@@ -1,0 +1,113 @@
+:root {
+  --bg-color: #0a0a0a;
+  --text-color: #e0e0e0;
+  --accent-color: #ff3333;
+  --font-family: 'Courier New', Courier, monospace;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  font-family: var(--font-family);
+  overflow: hidden;
+}
+
+.container {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #000;
+}
+
+#main-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  z-index: 1;
+}
+
+.hud {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
+  padding: 2rem;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+h1 {
+  font-size: 2rem;
+  text-transform: uppercase;
+  letter-spacing: 0.2rem;
+  text-shadow: 2px 2px 0px #000;
+  color: var(--accent-color);
+  margin-bottom: 1rem;
+}
+
+.status {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-size: 1.2rem;
+  text-shadow: 1px 1px 0px #000;
+}
+
+#bank-indicator {
+  font-weight: bold;
+}
+
+.keyboard-map {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 1rem;
+  margin-top: auto;
+}
+
+.key-pad {
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid var(--text-color);
+  padding: 1rem;
+  text-align: center;
+  border-radius: 4px;
+}
+
+.key-pad .key-label {
+  display: block;
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: var(--accent-color);
+  margin-bottom: 0.5rem;
+}
+
+.key-pad .clip-name {
+  font-size: 0.8rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.key-pad.active {
+  background: var(--accent-color);
+  color: #000;
+  border-color: #fff;
+}
+.key-pad.active .key-label {
+  color: #fff;
+}
