@@ -12,7 +12,7 @@ info:
   subtitle: "Lo que quieren las wachas"
   github: "https://github.com/vlasvlasvlas/botovejero"
   description: >
-    Sampler/VJ tool construido sobre una playlist de 322 videos de pregoneros
+    Sampler/VJ tool construido sobre una playlist de 322 videos de ropavejeros
     latinoamericanos. Motor de audio Tone.js, XY pad para modular rate y filtro,
     efectos visuales configurables sobre los clips.
     Playlist completa: https://www.youtube.com/playlist?list=PL9j8qQhL2r3n7XoVZl5s1mN8e9kKz6a

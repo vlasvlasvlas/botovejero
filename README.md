@@ -1,12 +1,12 @@
 # BOTOVEJERO
 
-> **Instrumento audiovisual web — sampler + VJ tool sobre una playlist de 322 videos de pregoneros callejeros latinoamericanos.**
+> **Instrumento audiovisual web — sampler + VJ tool sobre una playlist de 322 videos de ropavejeros callejeros latinoamericanos.**
 
 Disparás pads con el teclado, modulás velocidad (incluyendo reverse), highpass resonante y delay+reverb con un XY pad tipo Kaoss, y aplicás efectos visuales configurables sobre los clips en tiempo real. Estética ANSI BBS.
 
 🌐 **Demo en vivo:** [vlasvlasvlas.github.io/botovejero](https://vlasvlasvlas.github.io/botovejero/)
 📦 **Repo:** [github.com/vlasvlasvlas/botovejero](https://github.com/vlasvlasvlas/botovejero)
-🎞 **Fuente audiovisual:** [Playlist YouTube — 322 pregoneros](https://www.youtube.com/playlist?list=PLqY0WHGqeB2tdEn_quF2paebPOI70NQhj)
+🎞 **Fuente audiovisual:** [Playlist YouTube — 322 ropavejeros](https://www.youtube.com/playlist?list=PLqY0WHGqeB2tdEn_quF2paebPOI70NQhj)
 
 ---
 
@@ -121,7 +121,7 @@ info:
   subtitle: "Lo que quieren las wachas"
   github: "https://github.com/vlasvlasvlas/botovejero"
   description: >
-    Sampler/VJ basado en pregoneros latinoamericanos.
+    Sampler/VJ basado en ropavejeros latinoamericanos.
 
 effects:
   - name: DIRECTO
@@ -305,13 +305,13 @@ Además del texto legal, pido amistosamente (sin ser vinculante):
 - 🔗 **Citá la fuente** (este repo) en tu proyecto.
 - 🛠 **Rehaciéndolo, forkéandolo, remixándolo**: bienvenido. Es para eso.
 
-> ⚠️ La licencia MIT cubre **solo el código y la infraestructura** del instrumento. El material audiovisual (los `.mp4` de pregoneros en `public/media/`) NO es mío — pertenece a sus autores originales en la [playlist fuente de YouTube](https://www.youtube.com/playlist?list=PLqY0WHGqeB2tdEn_quF2paebPOI70NQhj). Si usás los clips en un trabajo público, respetá los derechos de cada autor original.
+> ⚠️ La licencia MIT cubre **solo el código y la infraestructura** del instrumento. El material audiovisual (los `.mp4` de ropavejeros en `public/media/`) NO es mío — pertenece a sus autores originales en la [playlist fuente de YouTube](https://www.youtube.com/playlist?list=PLqY0WHGqeB2tdEn_quF2paebPOI70NQhj). Si usás los clips en un trabajo público, respetá los derechos de cada autor original.
 
 ---
 
 ## Créditos
 
-- **Fuente audiovisual**: [Playlist YouTube — 322 videos de ropavejeros/pregoneros](https://www.youtube.com/playlist?list=PLqY0WHGqeB2tdEn_quF2paebPOI70NQhj).
+- **Fuente audiovisual**: [Playlist YouTube — 322 videos de ropavejeros/ropavejeros](https://www.youtube.com/playlist?list=PLqY0WHGqeB2tdEn_quF2paebPOI70NQhj).
 - **Autor**: [@vlasvlasvlas](https://github.com/vlasvlasvlas).
 - **Asistencia técnica**: Claude (Anthropic).
 
