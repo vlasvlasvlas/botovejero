@@ -1,2 +1,6 @@
 node_modules/
 dist/
+start-claude.sh
+docs/
+.DS_Store
+*.log

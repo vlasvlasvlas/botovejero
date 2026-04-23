@@ -1,0 +1,121 @@
+# BOTOVEJERO — config runtime
+# Editá esto y recargá la página. No hace falta rebuild.
+
+ui:
+  defaultMode: FULL       # FULL | XY_ONLY | PADS_ONLY | STEALTH
+  defaultEffect: 0        # índice del efecto inicial en la lista de abajo
+  showWaveform: false     # onda de audio dibujada sobre el video (toggle: W)
+
+info:
+  title: "BOTOVEJERO"
+  subtitle: "Lo que quieren las wachas"
+  github: "https://github.com/VladimiroBellini/botovejero"
+  description: >
+    Sampler/VJ tool construido sobre una playlist de 322 videos de pregoneros
+    latinoamericanos. Motor de audio Tone.js, XY pad para modular rate y filtro,
+    efectos visuales configurables sobre los clips.
+    Playlist completa: https://www.youtube.com/playlist?list=PL9j8qQhL2r3n7XoVZl5s1mN8e9kKz6a
+
+# Efectos visuales aplicados al canvas.
+# type: css | pixelate | scanlines | rgbShift | ascii | ansiBlocks |
+#       blend | channelSplit | weave | videoGrid
+# ghost: 0..1 (cuánto se preserva del frame anterior — 0 = sin ghost, 0.9 = mucho)
+# Los últimos 4 tipos muestran lo mejor cuando hay VARIOS pads sonando a la vez.
+effects:
+  - name: DIRECTO
+    type: css
+    filter: "none"
+    ghost: 0.15
+
+  - name: GRAFICO SUCIO
+    type: css
+    filter: "contrast(300%) grayscale(100%)"
+    ghost: 0.15
+
+  - name: INVERTIDO
+    type: css
+    filter: "invert(100%) hue-rotate(180deg)"
+    ghost: 0.15
+
+  - name: ROJO URBANO
+    type: css
+    filter: "sepia(100%) hue-rotate(-50deg) saturate(500%)"
+    ghost: 0.15
+
+  - name: FANTASMA
+    type: css
+    filter: "saturate(200%) blur(2px) contrast(150%)"
+    ghost: 0.70
+
+  - name: POSTERIZADO
+    type: css
+    filter: "contrast(200%) saturate(300%) brightness(120%)"
+    ghost: 0.15
+
+  - name: PIXELADO
+    type: pixelate
+    size: 80          # ancho del buffer de downsample (px)
+    ghost: 0.15
+
+  - name: SCANLINES
+    type: scanlines
+    thickness: 2      # grosor de cada línea negra
+    gap: 2            # espacio entre líneas
+    intensity: 0.55   # opacidad de la línea (0..1)
+    ghost: 0.15
+
+  - name: RGB SHIFT
+    type: rgbShift
+    offset: 10        # desplazamiento en px
+    ghost: 0.20
+
+  - name: ASCII
+    type: ascii
+    cellSize: 12      # alto de cada celda de char (px)
+    charset: " .:-=+*#%@"
+    color: "#55FF55"  # verde fósforo tipo terminal
+    background: "#000000"
+    ghost: 0.10
+
+  - name: ANSI BLOCKS
+    type: ansiBlocks
+    cellSize: 10
+    palette: CGA      # CGA | AMIGA | MONO
+    ghost: 0.10
+
+  - name: GHOSTING HEAVY
+    type: css
+    filter: "contrast(120%) saturate(130%)"
+    ghost: 0.88       # mucho residuo entre frames
+
+  # ── MULTI-VIDEO: diseñados para cuando hay varios pads sonando ──
+
+  - name: DIFFERENCE
+    type: blend
+    composite: "difference"  # cada video pintado con diferencia de pixel
+    ghost: 0.10
+
+  - name: EXCLUSION
+    type: blend
+    composite: "exclusion"
+    ghost: 0.15
+
+  - name: CHANNEL SPLIT
+    type: channelSplit
+    # cada video activo se asigna a un canal tintado (R, G, B...)
+    channels:
+      - "sepia(100%) hue-rotate(-50deg) saturate(700%)"   # rojo
+      - "sepia(100%) hue-rotate(60deg)  saturate(700%)"   # verde
+      - "sepia(100%) hue-rotate(180deg) saturate(700%)"   # azul / cyan
+      - "sepia(100%) hue-rotate(260deg) saturate(700%)"   # magenta
+    ghost: 0.20
+
+  - name: WEAVE
+    type: weave
+    bandHeight: 36    # alto de cada banda horizontal (px)
+    ghost: 0.10
+
+  - name: VIDEO GRID
+    type: videoGrid
+    # divide la pantalla en una grilla auto-dimensionada según cantidad de videos
+    ghost: 0.05
