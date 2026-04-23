@@ -482,7 +482,8 @@ body.mode-stealth    .xy-pad     { display: none !important; }
 .xy-pad {
   flex: 0.6;
   position: relative;
-  background: var(--c-black);
+  /* Opacidad configurable via CSS custom property (config.yaml → ui.xyPadOpacity) */
+  background: rgba(0, 0, 0, var(--xy-pad-opacity, 0.35));
   border: 1px solid var(--c-magenta);
   cursor: crosshair;
   touch-action: none;

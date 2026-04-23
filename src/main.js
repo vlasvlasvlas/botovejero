@@ -14,8 +14,19 @@ const RELEASE_SEC   = 0.03;
 const RATE_REV_MAX  = -2.0;
 const RATE_CENTER   = 1.0;
 const RATE_FWD_MAX  = 3.0;
-const FILTER_MIN    = 200;
-const FILTER_MAX    = 20000;
+// Y axis: centro = neutro.
+//   Arriba → highpass resonante (low-cut) que sube freq + Q.
+//   Abajo  → delay + reverb wet.
+const HPF_MIN_FREQ     = 20;     // Y=0.5 (centro): filtro inaudible
+const HPF_MAX_FREQ     = 3500;   // Y=0 (tope arriba): corta todo menos agudos
+const HPF_MIN_Q        = 0.7;
+const HPF_MAX_Q        = 12;     // resonancia agresiva en el tope → pico audible
+
+const DELAY_TIME       = 0.28;
+const DELAY_FEEDBACK   = 0.45;
+const DELAY_MAX_WET    = 0.55;
+const REVERB_ROOM_SIZE = 0.75;
+const REVERB_MAX_WET   = 0.45;
 
 const UI_MODES = ['FULL', 'XY_ONLY', 'PADS_ONLY', 'STEALTH'];
 
@@ -42,6 +53,7 @@ let totalPages = 1;
 let isAutoPlaying = false;
 let autoPlayIndex = 0;
 let autoPlayTimer = null;
+let lastAutoPlayPad = -1;
 let allLoaded = false;
 
 let uiMode = 'FULL';
@@ -52,7 +64,7 @@ let showWaveform = false;
 const players    = new Map();
 const padStates  = new Map();
 const activePads = new Set();
-let masterFilter, masterGain, masterAnalyser;
+let masterFilter, masterDelay, masterReverb, masterGain, masterAnalyser;
 
 // XY Pad
 let xyActive = false;
@@ -87,12 +99,17 @@ function applyRateToPlayer(player, rate) {
 
 // ─────────────────────────────────────────
 // AUDIO ENGINE
+// Cadena: Player → HPF(resonante) → Delay → Reverb → Gain → Analyser → Destination
+// Y centro = neutro. Arriba abre HPF + Q (pico resonante). Abajo moja delay+reverb.
 // ─────────────────────────────────────────
 function initAudioEngine() {
-  masterFilter   = new Tone.Filter({ frequency: FILTER_MAX, type: 'lowpass', rolloff: -24 });
+  masterFilter   = new Tone.Filter(HPF_MIN_FREQ, 'highpass');
+  masterFilter.Q.value = HPF_MIN_Q;
+  masterDelay    = new Tone.FeedbackDelay({ delayTime: DELAY_TIME, feedback: DELAY_FEEDBACK, wet: 0 });
+  masterReverb   = new Tone.Freeverb({ roomSize: REVERB_ROOM_SIZE, dampening: 3000, wet: 0 });
   masterGain     = new Tone.Gain(1);
   masterAnalyser = new Tone.Analyser('waveform', 256);
-  masterFilter.chain(masterGain, masterAnalyser, Tone.getDestination());
+  masterFilter.chain(masterDelay, masterReverb, masterGain, masterAnalyser, Tone.getDestination());
 }
 
 function setPadState(globalIndex, state) {
@@ -207,8 +224,23 @@ function updateXYEffects() {
   const rate       = computeRate(xyX);
   const absRate    = Math.max(0.01, Math.abs(rate));
   const isReverse  = rate < 0;
-  const filterFreq = FILTER_MIN + (1 - xyY) * (FILTER_MAX - FILTER_MIN);
-  if (masterFilter) masterFilter.frequency.rampTo(filterFreq, 0.05);
+
+  // Y: centro = neutro (reposo).
+  //    upper (0..1) = cuánto se subió del centro → abre HPF resonante + LFO
+  //    lower (0..1) = cuánto se bajó del centro  → moja delay+reverb
+  const upper = Math.max(0, 0.5 - xyY) * 2;
+  const lower = Math.max(0, xyY - 0.5) * 2;
+
+  if (masterFilter) {
+    const hpfFreq = HPF_MIN_FREQ + upper * (HPF_MAX_FREQ - HPF_MIN_FREQ);
+    const hpfQ    = HPF_MIN_Q    + upper * (HPF_MAX_Q    - HPF_MIN_Q);
+    masterFilter.frequency.rampTo(hpfFreq, 0.05);
+    // Q en algunas versiones de Tone no es un Signal con rampTo — seteo directo
+    try { masterFilter.Q.rampTo(hpfQ, 0.05); } catch { masterFilter.Q.value = hpfQ; }
+  }
+
+  if (masterDelay)  masterDelay.wet.rampTo(lower * DELAY_MAX_WET,  0.05);
+  if (masterReverb) masterReverb.wet.rampTo(lower * REVERB_MAX_WET, 0.05);
 
   for (const [, player] of players) {
     if (player.state === 'started') applyRateToPlayer(player, rate);
@@ -563,12 +595,25 @@ function toggleAutoPlay() {
     btn.classList.remove('on');
     btn.textContent = '[ ] AUTOPLAY';
     clearTimeout(autoPlayTimer);
+    // Detener el último pad que lanzó el autoplay
+    if (lastAutoPlayPad >= 0) {
+      const p = players.get(lastAutoPlayPad);
+      if (p && p.state === 'started') p.stop();
+    }
+    lastAutoPlayPad = -1;
   }
 }
 
 function autoPlayNext() {
   if (!isAutoPlaying) return;
+  if (clips.length === 0) { isAutoPlaying = false; return; }
   if (autoPlayIndex >= clips.length) autoPlayIndex = 0;
+
+  // Detener el pad anterior del autoplay: su onstop limpia audio + video
+  if (lastAutoPlayPad >= 0 && lastAutoPlayPad !== autoPlayIndex) {
+    const prev = players.get(lastAutoPlayPad);
+    if (prev && prev.state === 'started') prev.stop();
+  }
 
   const targetPage = Math.floor(autoPlayIndex / PADS_PER_PAGE);
   if (targetPage !== currentPage) {
@@ -577,13 +622,20 @@ function autoPlayNext() {
     updatePageIndicator();
   }
 
-  triggerPad(autoPlayIndex);
   const player = players.get(autoPlayIndex);
+
+  // Si el clip no cargó, saltar en 60ms sin disparar
+  if (!player || !player.loaded || !player.buffer || !player.buffer.duration) {
+    autoPlayIndex++;
+    autoPlayTimer = setTimeout(autoPlayNext, 60);
+    return;
+  }
+
+  triggerPad(autoPlayIndex);
+  lastAutoPlayPad = autoPlayIndex;
+
   const rateAbs = Math.max(0.05, Math.abs(computeRate(xyX)));
-  const baseDur = (player && player.buffer && player.buffer.duration)
-    ? player.buffer.duration * 1000
-    : 5000;
-  const dur = baseDur / rateAbs;
+  const dur = (player.buffer.duration * 1000) / rateAbs;
   autoPlayIndex++;
   autoPlayTimer = setTimeout(autoPlayNext, dur + 200);
 }
@@ -703,7 +755,9 @@ function buildUI() {
             <tr><td>X (centro)</td><td>reproducción normal — 1x</td></tr>
             <tr><td>X (izq)</td><td>rebobinar, hasta reverse 2x en el tope</td></tr>
             <tr><td>X (der)</td><td>fast forward, hasta 3x en el tope</td></tr>
-            <tr><td>Y</td><td>filtro lowpass (200 Hz - 20 kHz)</td></tr>
+            <tr><td>Y (centro)</td><td>NEUTRO — sin FX</td></tr>
+            <tr><td>Y (arriba)</td><td>highpass con resonancia — low-cut agresivo</td></tr>
+            <tr><td>Y (abajo)</td><td>delay + reverb ambient al máximo</td></tr>
           </table>
         </div>
         <div class="help-section">
@@ -739,11 +793,11 @@ function buildUI() {
 
         <div id="xy-pad" class="xy-pad">
           <div class="xy-frame">
-            <span class="xy-label xy-top">Y:FILTER ▲</span>
-            <span class="xy-label xy-bottom">▼ CLOSED</span>
+            <span class="xy-label xy-top">▲ HI-CUT (resonante)</span>
+            <span class="xy-label xy-bottom">WET ▼ (DLY+RVB)</span>
             <span class="xy-label xy-left">◄ REW</span>
             <span class="xy-label xy-right">FF ►</span>
-            <span class="xy-label xy-center">X=RATE (CENTER=1x) · Y=FILTER</span>
+            <span class="xy-label xy-center">CENTER = NEUTRO · X=RATE · Y=FX</span>
             <div id="xy-cursor" class="xy-cursor"><pre class="xy-cursor-art">   │
    │
 ───┼───
@@ -984,6 +1038,10 @@ async function loadConfig() {
     if (typeof parsed?.ui?.showWaveform === 'boolean') {
       showWaveform = parsed.ui.showWaveform;
     }
+    if (typeof parsed?.ui?.xyPadOpacity === 'number') {
+      const a = Math.max(0, Math.min(1, parsed.ui.xyPadOpacity));
+      document.documentElement.style.setProperty('--xy-pad-opacity', String(a));
+    }
   } catch (err) {
     console.warn('config.yaml no encontrado, usando defaults');
   }
@@ -1005,6 +1063,20 @@ async function loadPlaylist() {
         file:  `${String(i).padStart(3, '0')}.mp4`,
       });
     }
+  }
+}
+
+// Re-bind `onstop` de cada player al índice actual en el Map.
+// Necesario después de cualquier re-indexado (compact) — los callbacks
+// originales capturaron el índice viejo en su closure.
+function rebindPlayerCallbacks() {
+  for (const [idx, player] of players) {
+    player.onstop = () => {
+      activePads.delete(idx);
+      const video = activeVideos.get(idx);
+      if (video) { video.pause(); activeVideos.delete(idx); }
+      if (padStates.get(idx) === 'playing') setPadState(idx, 'ready');
+    };
   }
 }
 
@@ -1044,6 +1116,8 @@ function compactClipsToLoaded() {
   clips = newClips;
   totalPages = Math.max(1, Math.ceil(clips.length / PADS_PER_PAGE));
   if (currentPage >= totalPages) currentPage = totalPages - 1;
+  // CRÍTICO: los onstop originales usaban el índice viejo en closure
+  rebindPlayerCallbacks();
   if (dropped > 0) console.info(`Compactados ${dropped} clips que no cargaron (grilla sin huecos).`);
 }
 

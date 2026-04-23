@@ -2,7 +2,7 @@
 
 > **Instrumento audiovisual web — sampler + VJ tool sobre una playlist de 322 videos de pregoneros callejeros latinoamericanos.**
 
-Disparás pads con el teclado, modulás velocidad y filtro con un XY pad tipo Kaoss, y aplicás efectos visuales configurables sobre los clips en tiempo real. Estética ANSI BBS.
+Disparás pads con el teclado, modulás velocidad (incluyendo reverse), highpass resonante y delay+reverb con un XY pad tipo Kaoss, y aplicás efectos visuales configurables sobre los clips en tiempo real. Estética ANSI BBS.
 
 🌐 **Demo en vivo:** [vlasvlasvlas.github.io/botovejero](https://vlasvlasvlas.github.io/botovejero/)
 📦 **Repo:** [github.com/vlasvlasvlas/botovejero](https://github.com/vlasvlasvlas/botovejero)
@@ -32,10 +32,10 @@ Disparás pads con el teclado, modulás velocidad y filtro con un XY pad tipo Ka
 ## Features
 
 - 🎹 **Motor de audio Tone.js** polifónico con pre-carga eager — latencia cero al primer disparo.
-- 🎛 **XY pad** tipo Kaoss:
-  - Eje X: centro (sin tocar) = playback normal 1×; izquierda = rebobinar hasta reverse 2×; derecha = fast forward hasta 3×.
-  - Eje Y: filtro lowpass (200 Hz – 20 kHz).
-  - Pitch natural de vinilo, sin time-stretch. El reverse usa el buffer invertido de Tone.js.
+- 🎛 **XY pad** tipo Kaoss, todo el centro (reposo) es neutro:
+  - **Eje X (rate + reverse)**: centro = 1× normal; izquierda = rewind hasta reverse 2×; derecha = fast forward hasta 3×. Pitch natural de vinilo, sin time-stretch. Reverse real via buffer invertido de Tone.js.
+  - **Eje Y (FX)**: centro = sin efecto; **arriba = highpass resonante** (low-cut, sube freq 20 Hz → 3.5 kHz con Q 0.7 → 12); **abajo = delay + reverb wet** (FeedbackDelay + Freeverb).
+  - Opacidad del XY pad configurable en `config.yaml` (`ui.xyPadOpacity`) para dejar ver el video de fondo.
 - 🎨 **12 efectos visuales** configurables por YAML: CSS filters, pixelado, scanlines, RGB shift, ASCII art, ANSI blocks (paleta CGA/AMIGA/MONO), y 5 modos multi-video (`DIFFERENCE`, `EXCLUSION`, `CHANNEL SPLIT`, `WEAVE`, `VIDEO GRID`).
 - 🪟 **4 modos de UI** cicleables por teclado: `FULL`, `XY_ONLY`, `PADS_ONLY`, `STEALTH` (solo video, para proyección).
 - ▶️ **Autoplay** secuencial que ajusta la duración por `playbackRate`.
@@ -85,7 +85,7 @@ Si no bajaste los `.mp4` todavía, ver [Descarga de media](#descarga-de-media).
 | Zona    | Acción                                                                                  |
 |---------|------------------------------------------------------------------------------------------|
 | Pad     | Click o touch dispara el clip                                                           |
-| XY pad  | Drag para modular rate (X: reverse ←→ normal ←→ fast) y filter (Y). Al soltar vuelve al centro (neutro = 1× normal). |
+| XY pad  | Drag para modular. X: reverse ←→ normal ←→ fast. Y: hi-cut resonante (arriba) ←→ neutro (centro) ←→ delay+reverb (abajo). Al soltar vuelve al centro (completamente neutro). |
 | Top bar | Botones equivalentes a los shortcuts (autoplay, FX, paginación, UI mode, help)          |
 
 ---
@@ -114,6 +114,7 @@ ui:
   defaultMode: FULL       # FULL | XY_ONLY | PADS_ONLY | STEALTH
   defaultEffect: 0        # índice del efecto inicial
   showWaveform: false     # onda de audio sobre el video (toggle: W)
+  xyPadOpacity: 0.35      # 0 = XY totalmente transparente, 1 = negro opaco
 
 info:
   title: "BOTOVEJERO"
@@ -255,20 +256,20 @@ botovejero/
 ### Audio
 
 ```
-┌──────────────┐    ┌─────────────┐    ┌────────┐    ┌──────────┐    ┌─────────────┐
-│ Tone.Player  │───▶│ master      │───▶│ master │───▶│ master   │───▶│ destination │
-│ (por clip,   │    │ Filter      │    │ Gain   │    │ Analyser │    │             │
-│ fadeOut 30ms)│    │ (Y = freq)  │    │        │    │ (wave)   │    │             │
-└──────────────┘    └─────────────┘    └────────┘    └──────────┘    └─────────────┘
+┌──────────────┐    ┌──────────┐    ┌───────────┐    ┌────────┐    ┌────────┐    ┌──────────┐    ┌──────────┐
+│ Tone.Player  │───▶│ HighPass │───▶│ Feedback  │───▶│ Free   │───▶│ master │───▶│ master   │───▶│ dest.    │
+│ (por clip,   │    │  (freq,Q)│    │  Delay    │    │ Reverb │    │ Gain   │    │ Analyser │    │          │
+│ fadeOut 30ms)│    │  ← Y up  │    │  ← Y down │    │← Y down│    │        │    │ (wave)   │    │          │
+└──────────────┘    └──────────┘    └───────────┘    └────────┘    └────────┘    └──────────┘    └──────────┘
        ▲
        │ X axis: reverse -2× ←→ normal 1× (centro) ←→ fast 3×
-       │           (reverse usa `player.reverse = true` sobre el buffer)
+       │           (reverse usa `player.reverse = true` sobre el buffer invertido)
 ```
 
 - Cada `Tone.Player` pre-carga su buffer al arranque.
 - Release envelope de 30 ms en `fadeOut` evita clicks al `stop()`.
-- El eje Y del XY Pad controla el cutoff del lowpass master con rampa de 50 ms.
-- El eje X modifica el `playbackRate` del player y el del `<video>` en sincronía (pitch natural de vinilo, sin compensación).
+- Eje Y centro = neutro absoluto. Subir abre un highpass resonante (cutoff 20 Hz → 3.5 kHz, Q 0.7 → 12) que produce un pico audible, tipo radio AM / low-cut agresivo. Bajar moja un `FeedbackDelay` (0.28s, feedback 0.45) y un `Freeverb` (roomSize 0.75) progresivamente.
+- Eje X modifica `playbackRate` del player + `<video>` en sincronía. En reverse el audio se invierte (buffer de Tone.js); el `<video>` nativo se congela porque no soporta reverse consistente entre browsers.
 
 ### Video
 

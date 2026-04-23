@@ -5,6 +5,7 @@ ui:
   defaultMode: FULL       # FULL | XY_ONLY | PADS_ONLY | STEALTH
   defaultEffect: 0        # índice del efecto inicial en la lista de abajo
   showWaveform: false     # onda de audio dibujada sobre el video (toggle: W)
+  xyPadOpacity: 0.35      # 0 = totalmente transparente (pasa el video), 1 = negro opaco
 
 info:
   title: "BOTOVEJERO"
