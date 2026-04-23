@@ -9,7 +9,7 @@ ui:
 info:
   title: "BOTOVEJERO"
   subtitle: "Lo que quieren las wachas"
-  github: "https://github.com/VladimiroBellini/botovejero"
+  github: "https://github.com/vlasvlasvlas/botovejero"
   description: >
     Sampler/VJ tool construido sobre una playlist de 322 videos de pregoneros
     latinoamericanos. Motor de audio Tone.js, XY pad para modular rate y filtro,

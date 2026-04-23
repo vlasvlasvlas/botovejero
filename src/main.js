@@ -7,34 +7,36 @@ import yaml from 'js-yaml';
 // ─────────────────────────────────────────
 const PADS_PER_PAGE = 10;
 const RELEASE_SEC   = 0.03;
-const RATE_MIN      = 0.25;
-const RATE_MAX      = 3.0;
+// XY pad: X es piecewise-linear alrededor del centro.
+//   X=0.0 → RATE_REV_MAX (reverse al máximo, usa Tone.Player.reverse)
+//   X=0.5 → RATE_CENTER  (reproducción normal, sin tocar el pad)
+//   X=1.0 → RATE_FWD_MAX (fast forward)
+const RATE_REV_MAX  = -2.0;
+const RATE_CENTER   = 1.0;
+const RATE_FWD_MAX  = 3.0;
 const FILTER_MIN    = 200;
 const FILTER_MAX    = 20000;
 
 const UI_MODES = ['FULL', 'XY_ONLY', 'PADS_ONLY', 'STEALTH'];
 
-// Base URL de Vite (respeta `base` del vite.config para deploys en subpath
-// como GitHub Pages project pages)
-const BASE = import.meta.env.BASE_URL || './';
+// Resolver paths relativos contra la URL real del documento.
+// Funciona en dev (localhost:3000/), en GitHub Pages project page
+// (user.github.io/botovejero/) y con `base: './'` en Vite.
+const assetUrl = (rel) => new URL(rel, document.baseURI).toString();
 
-const DEFAULT_EFFECTS = [
+// Fallbacks mínimos. La fuente de verdad es `public/config.yaml`;
+// estos valores solo se usan si el YAML no existe o falla el parseo.
+const FALLBACK_EFFECTS = [
   { name: 'DIRECTO', type: 'css', filter: 'none', ghost: 0.15 },
 ];
-
-const DEFAULT_INFO = {
-  title: 'BOTOVEJERO v1.5',
-  subtitle: 'instrumento audiovisual vivo',
-  github: 'https://github.com/VladimiroBellini/botovejero',
-  description: 'Sampler/VJ web.',
-};
+const FALLBACK_INFO = { title: '', subtitle: '', github: '', description: '' };
 
 // ─────────────────────────────────────────
 // STATE
 // ─────────────────────────────────────────
 let clips = [];
-let effects = DEFAULT_EFFECTS;
-let info = DEFAULT_INFO;
+let effects = FALLBACK_EFFECTS;
+let info = { ...FALLBACK_INFO };
 let currentPage = 0;
 let totalPages = 1;
 let isAutoPlaying = false;
@@ -66,6 +68,22 @@ const keyMap = {
   '1': 0, '2': 1, '3': 2, '4': 3, '5': 4,
   '6': 5, '7': 6, '8': 7, '9': 8, '0': 9,
 };
+
+// X axis → rate (piecewise: reverse hasta el centro, normal-to-fast después)
+function computeRate(x) {
+  if (x <= 0.5) return RATE_REV_MAX + (x / 0.5) * (RATE_CENTER - RATE_REV_MAX);
+  return RATE_CENTER + ((x - 0.5) / 0.5) * (RATE_FWD_MAX - RATE_CENTER);
+}
+
+// Aplica rate (posiblemente negativo) a un Tone.Player:
+// negativo → player.reverse=true + abs rate; positivo → reverse=false.
+function applyRateToPlayer(player, rate) {
+  if (!player) return;
+  const isReverse = rate < 0;
+  const absRate = Math.max(0.01, Math.abs(rate));
+  try { if (player.buffer && player.buffer.loaded) player.reverse = isReverse; } catch { /* no-op */ }
+  player.playbackRate = absRate;
+}
 
 // ─────────────────────────────────────────
 // AUDIO ENGINE
@@ -108,7 +126,7 @@ async function preloadAllClips(onProgress) {
   const tasks = clips.map((clip, i) => new Promise((resolve) => {
     setPadState(i, 'loading');
     const player = new Tone.Player({
-      url: `${BASE}media/${clip.file}`,
+      url: assetUrl(`media/${clip.file}`),
       loop: false,
       fadeOut: RELEASE_SEC,
       onload: () => {
@@ -149,8 +167,7 @@ function triggerPad(globalIndex) {
 
   if (player.state === 'started') player.stop();
 
-  const rate = RATE_MIN + xyX * (RATE_MAX - RATE_MIN);
-  player.playbackRate = rate;
+  applyRateToPlayer(player, computeRate(xyX));
   player.start();
 
   activePads.add(globalIndex);
@@ -187,14 +204,18 @@ function panicStopAll() {
 }
 
 function updateXYEffects() {
-  const rate       = RATE_MIN + xyX * (RATE_MAX - RATE_MIN);
+  const rate       = computeRate(xyX);
+  const absRate    = Math.max(0.01, Math.abs(rate));
+  const isReverse  = rate < 0;
   const filterFreq = FILTER_MIN + (1 - xyY) * (FILTER_MAX - FILTER_MIN);
   if (masterFilter) masterFilter.frequency.rampTo(filterFreq, 0.05);
+
   for (const [, player] of players) {
-    if (player.state === 'started') player.playbackRate = rate;
+    if (player.state === 'started') applyRateToPlayer(player, rate);
   }
+  // <video> nativo no soporta reverse de manera consistente: en reverse lo freezo.
   for (const [, video] of activeVideos) {
-    video.playbackRate = rate;
+    video.playbackRate = isReverse ? 0.01 : absRate;
   }
 }
 
@@ -206,11 +227,12 @@ function triggerVideo(globalIndex) {
   if (!clip) return;
 
   const video = document.createElement('video');
-  video.src = `${BASE}media/${clip.file}`;
+  video.src = assetUrl(`media/${clip.file}`);
   video.crossOrigin = 'anonymous';
   video.muted = true;
   video.playsInline = true;
-  video.playbackRate = RATE_MIN + xyX * (RATE_MAX - RATE_MIN);
+  const initRate = computeRate(xyX);
+  video.playbackRate = initRate < 0 ? 0.01 : Math.max(0.01, initRate);
 
   video.onended = () => activeVideos.delete(globalIndex);
   video.onerror = () => activeVideos.delete(globalIndex);
@@ -557,11 +579,11 @@ function autoPlayNext() {
 
   triggerPad(autoPlayIndex);
   const player = players.get(autoPlayIndex);
-  const rate = RATE_MIN + xyX * (RATE_MAX - RATE_MIN);
+  const rateAbs = Math.max(0.05, Math.abs(computeRate(xyX)));
   const baseDur = (player && player.buffer && player.buffer.duration)
     ? player.buffer.duration * 1000
     : 5000;
-  const dur = baseDur / Math.max(rate, 0.05);
+  const dur = baseDur / rateAbs;
   autoPlayIndex++;
   autoPlayTimer = setTimeout(autoPlayNext, dur + 200);
 }
@@ -593,6 +615,30 @@ function showToast(text) {
 }
 
 // ─────────────────────────────────────────
+// INFO INJECTION (desde config.yaml)
+// ─────────────────────────────────────────
+function applyInfo() {
+  const setText = (id, text) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text || '';
+  };
+  setText('brand-name',    info.title);
+  setText('loading-title', info.title);
+  setText('loading-sub',   info.subtitle);
+  setText('help-title',    info.title);
+  setText('help-sub',      info.subtitle);
+  setText('help-desc',     info.description);
+
+  const ghLink = document.getElementById('help-github');
+  if (ghLink) {
+    ghLink.href = info.github || '#';
+    ghLink.textContent = info.github || '(configurá info.github en config.yaml)';
+  }
+
+  if (info.title) document.title = info.title;
+}
+
+// ─────────────────────────────────────────
 // HELP MODAL
 // ─────────────────────────────────────────
 function openHelpModal() {
@@ -615,8 +661,8 @@ function buildUI() {
 
     <div id="loading-overlay" class="ansi-overlay">
       <div class="loading-box">
-        <div class="loading-title">BOTOVEJERO v1.5</div>
-        <div class="loading-sub">instrumento audiovisual</div>
+        <div class="loading-title" id="loading-title"></div>
+        <div class="loading-sub" id="loading-sub"></div>
         <div class="loading-divider"></div>
         <div class="loading-status">CARGANDO CLIPS...</div>
         <div class="loading-bar-row">
@@ -654,7 +700,9 @@ function buildUI() {
         <div class="help-section">
           <div class="help-section-title">// XY PAD</div>
           <table class="help-table">
-            <tr><td>X</td><td>playback rate  (0.25x - 3x)</td></tr>
+            <tr><td>X (centro)</td><td>reproducción normal — 1x</td></tr>
+            <tr><td>X (izq)</td><td>rebobinar, hasta reverse 2x en el tope</td></tr>
+            <tr><td>X (der)</td><td>fast forward, hasta 3x en el tope</td></tr>
             <tr><td>Y</td><td>filtro lowpass (200 Hz - 20 kHz)</td></tr>
           </table>
         </div>
@@ -672,7 +720,7 @@ function buildUI() {
       <header class="top-bar">
         <div class="brand">
           <span class="brand-bracket">╔═══</span>
-          <span class="brand-name">BOTOVEJERO v1.5</span>
+          <span class="brand-name" id="brand-name"></span>
           <span class="brand-bracket">═══╗</span>
         </div>
         <div class="controls-row">
@@ -693,9 +741,9 @@ function buildUI() {
           <div class="xy-frame">
             <span class="xy-label xy-top">Y:FILTER ▲</span>
             <span class="xy-label xy-bottom">▼ CLOSED</span>
-            <span class="xy-label xy-left">◄ SLOW</span>
-            <span class="xy-label xy-right">FAST ►</span>
-            <span class="xy-label xy-center">X=RATE · Y=FILTER</span>
+            <span class="xy-label xy-left">◄ REW</span>
+            <span class="xy-label xy-right">FF ►</span>
+            <span class="xy-label xy-center">X=RATE (CENTER=1x) · Y=FILTER</span>
             <div id="xy-cursor" class="xy-cursor"><pre class="xy-cursor-art">   │
    │
 ───┼───
@@ -922,7 +970,7 @@ function setupEventListeners() {
 // ─────────────────────────────────────────
 async function loadConfig() {
   try {
-    const res = await fetch(`${BASE}config.yaml`);
+    const res = await fetch(assetUrl('config.yaml'));
     if (!res.ok) throw new Error('config.yaml missing');
     const parsed = yaml.load(await res.text());
     if (parsed?.effects?.length)  effects = parsed.effects;
@@ -943,7 +991,7 @@ async function loadConfig() {
 
 async function loadPlaylist() {
   try {
-    const response = await fetch(`${BASE}media/playlist.yaml`);
+    const response = await fetch(assetUrl('media/playlist.yaml'));
     if (!response.ok) throw new Error('no playlist.yaml');
     const parsed = yaml.load(await response.text());
     clips = Array.isArray(parsed) ? parsed : (parsed?.clips || parsed?.playlist || []);
@@ -960,14 +1008,58 @@ async function loadPlaylist() {
   }
 }
 
+// Safety net: después del preload, descarta cualquier clip cuyo Tone.Player
+// NO haya logrado cargar el buffer (404, decode error, CORS, etc.) y compacta
+// tanto `clips` como el mapa `players` para que la grilla no deje huecos.
+function compactClipsToLoaded() {
+  const validIndices = [];
+  for (let i = 0; i < clips.length; i++) {
+    const p = players.get(i);
+    if (p && p.loaded) validIndices.push(i);
+  }
+  if (validIndices.length === clips.length) return;
+
+  const newClips = validIndices.map(i => clips[i]);
+  const newPlayers = new Map();
+  const newStates = new Map();
+  validIndices.forEach((oldIdx, newIdx) => {
+    const p = players.get(oldIdx);
+    if (p) newPlayers.set(newIdx, p);
+    const s = padStates.get(oldIdx);
+    if (s) newStates.set(newIdx, s);
+  });
+  // Descartar players huérfanos
+  const keep = new Set(validIndices);
+  for (const [oldIdx, p] of players) {
+    if (!keep.has(oldIdx)) {
+      try { p.dispose(); } catch { /* no-op */ }
+    }
+  }
+  players.clear();
+  padStates.clear();
+  for (const [k, v] of newPlayers) players.set(k, v);
+  for (const [k, v] of newStates) padStates.set(k, v);
+
+  const dropped = clips.length - newClips.length;
+  clips = newClips;
+  totalPages = Math.max(1, Math.ceil(clips.length / PADS_PER_PAGE));
+  if (currentPage >= totalPages) currentPage = totalPages - 1;
+  if (dropped > 0) console.info(`Compactados ${dropped} clips que no cargaron (grilla sin huecos).`);
+}
+
 // Filtra de la playlist los clips cuyo archivo no existe en disco.
 // Consolida: si falta el 005, el pad 5 muestra el siguiente en línea, sin huecos.
 async function filterMissingClips() {
   if (!clips.length) return;
   const checks = await Promise.all(clips.map(async (clip) => {
     try {
-      const res = await fetch(`${BASE}media/${clip.file}`, { method: 'HEAD' });
-      return res.ok;
+      const res = await fetch(assetUrl(`media/${clip.file}`), { method: 'HEAD' });
+      if (!res.ok) return false;
+      // Vite dev server hace SPA fallback y responde 200 + text/html
+      // para rutas no encontradas. Hay que rechazar explícitamente eso.
+      const ct = (res.headers.get('content-type') || '').toLowerCase();
+      if (ct.startsWith('text/html')) return false;
+      return true;
     } catch {
       return false;
     }
@@ -998,13 +1090,7 @@ async function init() {
   await loadPlaylist();
   await filterMissingClips();
 
-  // Aplicar info en help modal
-  document.getElementById('help-title').textContent   = info.title;
-  document.getElementById('help-sub').textContent     = info.subtitle;
-  document.getElementById('help-desc').textContent    = info.description || '';
-  const ghLink = document.getElementById('help-github');
-  ghLink.href = info.github;
-  ghLink.textContent = info.github;
+  applyInfo();
 
   totalPages = Math.ceil(clips.length / PADS_PER_PAGE);
 
@@ -1023,6 +1109,14 @@ async function init() {
     renderLoadingOverlay(loaded, total);
     refreshAllPadStates();
   });
+
+  // Safety net: descartar clips que no cargaron (aunque el HEAD check los dejó pasar).
+  compactClipsToLoaded();
+  totalPages = Math.max(1, Math.ceil(clips.length / PADS_PER_PAGE));
+  if (currentPage >= totalPages) currentPage = totalPages - 1;
+  renderPadGrid();
+  updatePageIndicator();
+  renderLoadingOverlay(clips.length, clips.length);
 }
 
 init();
