@@ -1,0 +1,7 @@
+node_modules/
+dist/
+public/media/*.mp4
+public/media/*.webm
+public/media/*.mkv
+public/media/*.mp3
+public/media/*.wav
