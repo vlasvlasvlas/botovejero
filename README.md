@@ -33,14 +33,14 @@ Disparás pads con el teclado, modulás velocidad (incluyendo reverse), highpass
 - 🎹 **Motor de audio Tone.js** polifónico con pre-carga eager — latencia cero al primer disparo.
 - 🎛 **XY pad** tipo Kaoss, todo el centro (reposo) es neutro:
   - **Eje X (rate + reverse)**: centro = 1× normal; izquierda = rewind hasta reverse 2×; derecha = fast forward hasta 3×. Pitch natural de vinilo, sin time-stretch. Reverse real en audio (buffer invertido de Tone.js) **y** en video (decremento manual de `currentTime` frame a frame).
-  - **Eje Y (FX)**: centro = sin efecto; **arriba = highpass resonante** (low-cut, sube freq 20 Hz → 3.5 kHz con Q 0.7 → 12); **abajo = delay + reverb wet** (FeedbackDelay + Freeverb).
+  - **Eje Y (FX)**: centro = sin efecto; **arriba = highpass resonante acotado**; **abajo = delay + reverb wet** con feedback limitado.
   - Opacidad del XY pad y de los pads configurable en `config.yaml` (`ui.xyPadOpacity`, `ui.padOpacity`) para dejar ver el video de fondo.
 - 🎨 **12 efectos visuales** configurables por YAML: CSS filters, pixelado, scanlines, RGB shift, ASCII art, ANSI blocks (paleta CGA/AMIGA/MONO), y 5 modos multi-video (`DIFFERENCE`, `EXCLUSION`, `CHANNEL SPLIT`, `WEAVE`, `VIDEO GRID`).
 - 🪟 **4 modos de UI** cicleables por teclado: `FULL`, `XY_ONLY`, `PADS_ONLY`, `STEALTH` (solo video, para proyección).
 - ▶️ **Autoplay** secuencial que ajusta la duración por `playbackRate`.
 - 📌 **HOLD** (toggle en la top bar): si está ON, al soltar el mouse el XY pad queda fijo donde lo dejaste en vez de volver al centro. Si está OFF vuelve al centro con el portamento de `ui.xyReturnMs`. Default configurable (`ui.xyHold`).
-- 🔁 **LOOP** (toggle en la top bar): si está ON, los pads triggereados loopean audio+video hasta panic o retrigger. Si está OFF corren una sola vez. Se aplica en caliente a lo que ya esté sonando. Default configurable (`ui.videoLoop`).
-- 🔊 **Master volume** inline en la top bar con `[-]` / `[+]` y barra ANSI; también shortcut `[` / `]`.
+- 🔁 **LOOP** (toggle en la top bar): si está ON, los pads triggereados loopean audio+video hasta volver a tocar ese pad o panic. Si está OFF corren una sola vez. Se aplica en caliente a lo que ya esté sonando. Default configurable (`ui.videoLoop`).
+- 🔊 **Master volume** inline en la top bar con `[-]` / `[+]` y barra ANSI; también shortcut `[` / `]`. Es el único control de nivel continuo.
 - 🛑 **Panic button** (`.`) corta todo instantáneo.
 - ❓ **Modal de ayuda** (`?`) con shortcuts, XY pad, referencia a los YAMLs de configuración (`config.yaml` y `playlist.yaml`) y links.
 - 📡 **Consolidación automática** de clips faltantes: si un video no existe, no deja hueco — corre los siguientes.
@@ -123,7 +123,7 @@ ui:
   padOpacity: 0.8         # opacidad del fondo de los botones-pad (0..1)
   xyReturnMs: 400         # ms de portamento hacia el centro al soltar el XY (0 = snap instantáneo)
   xyHold: true            # toggle HOLD default. true = el XY queda fijo donde soltaste. false = vuelve al centro (usa xyReturnMs)
-  videoLoop: true         # toggle LOOP default. true = pads loopean audio+video sin fin (panic / retrigger corta). false = corren una sola vez
+  videoLoop: true         # toggle LOOP default. true = pads loopean audio+video sin fin (volver a tocar el pad / panic corta). false = corren una sola vez
   masterVolume: 85        # volumen maestro inicial (0..100)
   volumeStep: 5           # cuánto sube/baja por click de [+]/[-] o tecla [/]
 
@@ -234,9 +234,9 @@ botovejero/
 
 ```
 ┌──────────────┐    ┌──────────┐    ┌───────────┐    ┌────────┐    ┌────────┐    ┌──────────┐    ┌──────────┐
-│ Tone.Player  │───▶│ HighPass │───▶│ Feedback  │───▶│ Free   │───▶│ master │───▶│ master   │───▶│ dest.    │
-│ (por clip,   │    │  (freq,Q)│    │  Delay    │    │ Reverb │    │ Gain   │    │ Analyser │    │          │
-│ fadeOut 30ms)│    │  ← Y up  │    │  ← Y down │    │← Y down│    │        │    │ (wave)   │    │          │
+│ Tone.Player  │───▶│ Active   │───▶│ HighPass │───▶│ Delay + │───▶│ Master │───▶│ Comp/Limit │──▶│ Mono out │
+│ (por clip,   │    │ Pad Gain │    │  (freq,Q)│    │ Reverb  │    │ Gain   │    │ + Analyser │    │          │
+│ fadeOut 30ms)│    │ normaliz.│    │  ← Y up  │    │← Y down │    │        │    │            │    │          │
 └──────────────┘    └──────────┘    └───────────┘    └────────┘    └────────┘    └──────────┘    └──────────┘
        ▲
        │ X axis: reverse -2× ←→ normal 1× (centro) ←→ fast 3×
@@ -245,7 +245,9 @@ botovejero/
 
 - Cada `Tone.Player` pre-carga su buffer al arranque.
 - Release envelope de 30 ms en `fadeOut` evita clicks al `stop()`.
-- Eje Y centro = neutro absoluto. Subir abre un highpass resonante (cutoff 20 Hz → 3.5 kHz, Q 0.7 → 12) que produce un pico audible, tipo radio AM / low-cut agresivo. Bajar moja un `FeedbackDelay` (0.28s, feedback 0.45) y un `Freeverb` (roomSize 0.75) progresivamente.
+- Los pads activos pasan por una ganancia común que baja suavemente según la cantidad de clips sonando, para evitar sumas inesperadas.
+- Eje Y centro = neutro absoluto. Subir abre un highpass resonante acotado (cutoff 20 Hz → 2.4 kHz, Q 0.7 → 5.5). Bajar moja un `FeedbackDelay` (0.28s, feedback 0.22) y un `Freeverb` (roomSize 0.55) progresivamente.
+- El master usa trim, compresor, limiter y salida final mono.
 - Eje X modifica `playbackRate` del player + `<video>` en sincronía. En reverse el audio se invierte (`player.reverse = true` sobre el buffer de Tone.js) y el `<video>` también va en reverse **real**: un loop sobre `requestAnimationFrame` decrementa `video.currentTime` cada frame y loopea al final cuando llega a 0.
 
 ### Video
