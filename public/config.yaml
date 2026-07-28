@@ -10,7 +10,7 @@ ui:
   padOpacity: 0.8         # opacidad del fondo de los botones-pad (0..1)
   xyReturnMs: 400         # al soltar el XY, ms de portamento hacia el centro (0 = snap instantáneo)
   xyHold: true            # true = al soltar, el XY queda fijo donde dejaste el mouse. false = vuelve al centro (usa xyReturnMs)
-  videoLoop: true         # true = los pads triggereados loopean audio+video sin fin (hasta panic/retrigger). false = corren una sola vez
+  videoLoop: true         # true = los pads triggereados loopean audio+video sin fin (hasta volver a tocar el pad o panic). false = corren una sola vez
   masterVolume: 85        # volumen maestro inicial (0..100)
   volumeStep: 5           # cuánto sube/baja por click de [+]/[-] o tecla [/]
 

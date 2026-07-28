@@ -6,7 +6,10 @@ import yaml from 'js-yaml';
 // CONSTANTS
 // ─────────────────────────────────────────
 const PADS_PER_PAGE = 10;
-const RELEASE_SEC   = 0.03;
+const FADE_IN_SEC   = 0.06;
+const RELEASE_SEC   = 0.08;
+const START_LEAD_SEC = 0.025;
+const START_GUARD_SEC = 0.012;
 // XY pad: X es piecewise-linear alrededor del centro.
 //   X=0.0 → RATE_REV_MAX (reverse al máximo, usa Tone.Player.reverse)
 //   X=0.5 → RATE_CENTER  (reproducción normal, sin tocar el pad)
@@ -18,15 +21,18 @@ const RATE_FWD_MAX  = 3.0;
 //   Arriba → highpass resonante (low-cut) que sube freq + Q.
 //   Abajo  → delay + reverb wet.
 const HPF_MIN_FREQ     = 20;     // Y=0.5 (centro): filtro inaudible
-const HPF_MAX_FREQ     = 3500;   // Y=0 (tope arriba): corta todo menos agudos
+const HPF_MAX_FREQ     = 2400;   // Y=0 (tope arriba): corta sin generar pico peligroso
 const HPF_MIN_Q        = 0.7;
-const HPF_MAX_Q        = 12;     // resonancia agresiva en el tope → pico audible
+const HPF_MAX_Q        = 5.5;
 
 const DELAY_TIME       = 0.28;
-const DELAY_FEEDBACK   = 0.45;
-const DELAY_MAX_WET    = 0.55;
-const REVERB_ROOM_SIZE = 0.75;
-const REVERB_MAX_WET   = 0.45;
+const DELAY_FEEDBACK   = 0.22;
+const DELAY_MAX_WET    = 0.22;
+const REVERB_ROOM_SIZE = 0.55;
+const REVERB_MAX_WET   = 0.20;
+const FX_COMP_MIN_GAIN = 0.76;
+const MASTER_OUTPUT_TRIM = 0.72;
+const ACTIVE_PAD_INPUT_TRIM = 0.62;
 
 const UI_MODES = ['FULL', 'XY_ONLY', 'PADS_ONLY', 'STEALTH'];
 
@@ -67,7 +73,9 @@ let maxClips = 0;          // 0 = sin límite. N > 0 = carga solo los primeros N
 const players    = new Map();
 const padStates  = new Map();
 const activePads = new Set();
-let masterFilter, masterDelay, masterReverb, masterGain, masterAnalyser;
+const playerStartTimes = new Map();
+let masterInputGain, masterFilter, masterDelay, masterReverb, masterFxCompGain;
+let masterGain, masterCompressor, masterLimiter, masterMono, masterAnalyser;
 
 // XY Pad
 let xyActive = false;
@@ -112,17 +120,40 @@ function applyRateToPlayer(player, rate) {
 
 // ─────────────────────────────────────────
 // AUDIO ENGINE
-// Cadena: Player → HPF(resonante) → Delay → Reverb → Gain → Analyser → Destination
-// Y centro = neutro. Arriba abre HPF + Q (pico resonante). Abajo moja delay+reverb.
+// Cadena: Player → ActivePadGain → HPF → Delay → Reverb → MasterGain
+//         → Compressor → Limiter → Mono → Analyser → Destination.
+// Y centro = neutro. Arriba abre HPF + Q acotado. Abajo moja delay+reverb.
 // ─────────────────────────────────────────
 function initAudioEngine() {
+  masterInputGain = new Tone.Gain(ACTIVE_PAD_INPUT_TRIM);
   masterFilter   = new Tone.Filter(HPF_MIN_FREQ, 'highpass');
   masterFilter.Q.value = HPF_MIN_Q;
   masterDelay    = new Tone.FeedbackDelay({ delayTime: DELAY_TIME, feedback: DELAY_FEEDBACK, wet: 0 });
   masterReverb   = new Tone.Freeverb({ roomSize: REVERB_ROOM_SIZE, dampening: 3000, wet: 0 });
-  masterGain     = new Tone.Gain(1);
+  masterFxCompGain = new Tone.Gain(1);
+  masterGain     = new Tone.Gain((masterVolumePct / 100) * MASTER_OUTPUT_TRIM);
+  masterCompressor = new Tone.Compressor({
+    threshold: -24,
+    ratio: 4,
+    attack: 0.004,
+    release: 0.16,
+    knee: 10,
+  });
+  masterLimiter  = new Tone.Limiter(-3);
+  masterMono     = new Tone.Mono();
   masterAnalyser = new Tone.Analyser('waveform', 256);
-  masterFilter.chain(masterDelay, masterReverb, masterGain, masterAnalyser, Tone.getDestination());
+  masterInputGain.chain(
+    masterFilter,
+    masterDelay,
+    masterReverb,
+    masterFxCompGain,
+    masterGain,
+    masterCompressor,
+    masterLimiter,
+    masterMono,
+    masterAnalyser,
+    Tone.getDestination(),
+  );
 }
 
 // ─────────────────────────────────────────
@@ -130,10 +161,14 @@ function initAudioEngine() {
 // pct ∈ [0..100] → gain lineal [0..1]. Actualiza label + barra ANSI.
 // ─────────────────────────────────────────
 function setMasterVolume(pct) {
-  masterVolumePct = Math.max(0, Math.min(100, Math.round(pct)));
+  const parsed = Number(pct);
+  if (Number.isFinite(parsed)) {
+    masterVolumePct = Math.max(0, Math.min(100, Math.round(parsed)));
+  }
   if (masterGain) {
-    try { masterGain.gain.rampTo(masterVolumePct / 100, 0.05); }
-    catch { masterGain.gain.value = masterVolumePct / 100; }
+    const targetGain = (masterVolumePct / 100) * MASTER_OUTPUT_TRIM;
+    try { masterGain.gain.rampTo(targetGain, 0.08); }
+    catch { masterGain.gain.value = targetGain; }
   }
   const bar = document.getElementById('vol-bar');
   if (bar) bar.textContent = renderVolBar(masterVolumePct);
@@ -145,6 +180,26 @@ function renderVolBar(pct) {
   const len = 14;
   const filled = Math.round((pct / 100) * len);
   return '█'.repeat(filled) + '░'.repeat(len - filled);
+}
+
+function updateActivePadGain() {
+  if (!masterInputGain) return;
+  const activeCount = Math.max(1, activePads.size);
+  const targetGain = ACTIVE_PAD_INPUT_TRIM / Math.sqrt(activeCount);
+  try { masterInputGain.gain.rampTo(targetGain, 0.05); }
+  catch { masterInputGain.gain.value = targetGain; }
+}
+
+function clearPadPlayback(globalIndex) {
+  activePads.delete(globalIndex);
+  updateActivePadGain();
+  const video = activeVideos.get(globalIndex);
+  if (video) { video.pause(); activeVideos.delete(globalIndex); }
+  if (padStates.get(globalIndex) === 'playing') setPadState(globalIndex, 'ready');
+}
+
+function handlePlayerStop(globalIndex) {
+  clearPadPlayback(globalIndex);
 }
 
 function setPadState(globalIndex, state) {
@@ -180,6 +235,7 @@ async function preloadAllClips(onProgress) {
     const player = new Tone.Player({
       url: assetUrl(`media/${clip.file}`),
       loop: false,
+      fadeIn: FADE_IN_SEC,
       fadeOut: RELEASE_SEC,
       onload: () => {
         loaded++;
@@ -193,14 +249,9 @@ async function preloadAllClips(onProgress) {
         onProgress(loaded, total);
         resolve();
       },
-      onstop: () => {
-        activePads.delete(i);
-        const video = activeVideos.get(i);
-        if (video) { video.pause(); activeVideos.delete(i); }
-        if (padStates.get(i) === 'playing') setPadState(i, 'ready');
-      },
+      onstop: () => handlePlayerStop(i),
     });
-    player.connect(masterFilter);
+    player.connect(masterInputGain);
     players.set(i, player);
   }));
 
@@ -217,13 +268,35 @@ function triggerPad(globalIndex) {
   const player = players.get(globalIndex);
   if (!player || !player.loaded) return;
 
-  if (player.state === 'started') player.stop();
+  if (activePads.has(globalIndex) || player.state === 'started') {
+    stopPad(globalIndex);
+    return;
+  }
+
+  activePads.add(globalIndex);
+  updateActivePadGain();
 
   applyRateToPlayer(player, computeRate(xyX));
   try { player.loop = videoLoopEnabled; } catch { /* no-op */ }
-  player.start();
+  const now = Tone.now();
+  const previousStart = playerStartTimes.get(globalIndex) ?? 0;
+  let startAt = Math.max(now + START_LEAD_SEC, previousStart + START_GUARD_SEC);
+  let didStart = false;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      playerStartTimes.set(globalIndex, startAt);
+      player.start(startAt);
+      didStart = true;
+      break;
+    } catch (e) {
+      startAt = Math.max(Tone.now() + START_LEAD_SEC, startAt + START_GUARD_SEC);
+    }
+  }
+  if (!didStart) {
+    clearPadPlayback(globalIndex);
+    return;
+  }
 
-  activePads.add(globalIndex);
   setPadState(globalIndex, 'playing');
 
   triggerVideo(globalIndex);
@@ -231,15 +304,19 @@ function triggerPad(globalIndex) {
 
 function stopPad(globalIndex) {
   const player = players.get(globalIndex);
-  if (player && player.state === 'started') player.stop();
+  if (player) {
+    try { player.stop(Tone.now()); } catch { /* stop is best-effort for pending starts */ }
+  }
+  clearPadPlayback(globalIndex);
 }
 
 function panicStopAll() {
   videoReverseActive = false;
   for (const [, player] of players) {
-    if (player.state === 'started') player.stop();
+    try { player.stop(Tone.now()); } catch { /* no-op */ }
   }
   activePads.clear();
+  updateActivePadGain();
   for (const [, video] of activeVideos) video.pause();
   activeVideos.clear();
   for (const [i, s] of padStates) {
@@ -309,13 +386,17 @@ function updateXYEffects() {
   if (masterFilter) {
     const hpfFreq = HPF_MIN_FREQ + upper * (HPF_MAX_FREQ - HPF_MIN_FREQ);
     const hpfQ    = HPF_MIN_Q    + upper * (HPF_MAX_Q    - HPF_MIN_Q);
-    masterFilter.frequency.rampTo(hpfFreq, 0.05);
+    masterFilter.frequency.rampTo(hpfFreq, 0.08);
     // Q en algunas versiones de Tone no es un Signal con rampTo — seteo directo
-    try { masterFilter.Q.rampTo(hpfQ, 0.05); } catch { masterFilter.Q.value = hpfQ; }
+    try { masterFilter.Q.rampTo(hpfQ, 0.08); } catch { masterFilter.Q.value = hpfQ; }
   }
 
-  if (masterDelay)  masterDelay.wet.rampTo(lower * DELAY_MAX_WET,  0.05);
-  if (masterReverb) masterReverb.wet.rampTo(lower * REVERB_MAX_WET, 0.05);
+  if (masterDelay)  masterDelay.wet.rampTo(lower * DELAY_MAX_WET,  0.08);
+  if (masterReverb) masterReverb.wet.rampTo(lower * REVERB_MAX_WET, 0.08);
+  if (masterFxCompGain) {
+    const compensatedGain = Math.max(FX_COMP_MIN_GAIN, 1 - upper * 0.18 - lower * 0.12);
+    masterFxCompGain.gain.rampTo(compensatedGain, 0.08);
+  }
 
   for (const [, player] of players) {
     if (player.state === 'started') applyRateToPlayer(player, rate);
@@ -718,8 +799,7 @@ function toggleAutoPlay() {
     clearTimeout(autoPlayTimer);
     // Detener el último pad que lanzó el autoplay
     if (lastAutoPlayPad >= 0) {
-      const p = players.get(lastAutoPlayPad);
-      if (p && p.state === 'started') p.stop();
+      stopPad(lastAutoPlayPad);
     }
     lastAutoPlayPad = -1;
   }
@@ -732,8 +812,7 @@ function autoPlayNext() {
 
   // Detener el pad anterior del autoplay: su onstop limpia audio + video
   if (lastAutoPlayPad >= 0 && lastAutoPlayPad !== autoPlayIndex) {
-    const prev = players.get(lastAutoPlayPad);
-    if (prev && prev.state === 'started') prev.stop();
+    stopPad(lastAutoPlayPad);
   }
 
   const targetPage = Math.floor(autoPlayIndex / PADS_PER_PAGE);
@@ -957,7 +1036,7 @@ function buildUI() {
           </div>
           <button id="autoplay-btn" class="ctrl-btn">[ ] AUTOPLAY</button>
           <button id="xyhold-btn"   class="ctrl-btn" title="XY pad: al soltar, queda fijo donde lo dejaste">[X] HOLD</button>
-          <button id="loop-btn"     class="ctrl-btn" title="Pads triggereados loopean audio+video hasta panic/retrigger">[X] LOOP</button>
+          <button id="loop-btn"     class="ctrl-btn" title="Pads triggereados loopean audio+video hasta volver a tocar el pad o panic">[X] LOOP</button>
           <button id="shader-btn"   class="ctrl-btn">FX: DIRECTO</button>
           <span   id="page-indicator" class="page-indicator">PAG 01/01</span>
           <button id="prev-page" class="nav-btn">◄</button>
@@ -1293,12 +1372,7 @@ async function loadPlaylist() {
 // originales capturaron el índice viejo en su closure.
 function rebindPlayerCallbacks() {
   for (const [idx, player] of players) {
-    player.onstop = () => {
-      activePads.delete(idx);
-      const video = activeVideos.get(idx);
-      if (video) { video.pause(); activeVideos.delete(idx); }
-      if (padStates.get(idx) === 'playing') setPadState(idx, 'ready');
-    };
+    player.onstop = () => handlePlayerStop(idx);
   }
 }
 
