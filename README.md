@@ -276,7 +276,7 @@ botovejero/
 
 ## Licencia y uso
 
-**MIT License** — libre para usar, modificar, redistribuir y mezclar, con o sin fines comerciales. Ver [`LICENSE`](./LICENSE).
+[CC BY-SA 4.0](LICENSE) — © Vladimiro Bellini ([vlasvlasvlas](https://github.com/vlasvlasvlas)).
 
 Además del texto legal, pido amistosamente (sin ser vinculante):
 
@@ -284,7 +284,7 @@ Además del texto legal, pido amistosamente (sin ser vinculante):
 - 🔗 **Citá la fuente** (este repo) en tu proyecto.
 - 🛠 **Rehaciéndolo, forkéandolo, remixándolo**: bienvenido. Es para eso.
 
-> ⚠️ La licencia MIT cubre **solo el código y la infraestructura** del instrumento. El material audiovisual (los `.mp4` de ropavejeros en `public/media/`) NO es mío — pertenece a sus autores originales en la [playlist fuente de YouTube](https://www.youtube.com/playlist?list=PLqY0WHGqeB2tdEn_quF2paebPOI70NQhj). Si usás los clips en un trabajo público, respetá los derechos de cada autor original.
+> ⚠️ La licencia CC BY-SA 4.0 cubre **solo el código y la infraestructura** del instrumento. El material audiovisual (los `.mp4` de ropavejeros en `public/media/`) NO es mío — pertenece a sus autores originales en la [playlist fuente de YouTube](https://www.youtube.com/playlist?list=PLqY0WHGqeB2tdEn_quF2paebPOI70NQhj). Si usás los clips en un trabajo público, respetá los derechos de cada autor original.
 
 ---
 
